@@ -436,6 +436,10 @@ class AudioList(ItemList):
         res.items = np.char.add(np.char.add(pref, res.items.astype(str)), suffix)
         return res
 
+    def label_from_json(self, json_func, *args):
+
+        return
+
 
 def try_load(fn: Path) -> Tuple[torch.Tensor, int]:
     if not fn.exists():
