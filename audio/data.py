@@ -284,8 +284,8 @@ class AudioLabelList(LabelList):
         self.x.config._processed = True
 
 
-
 class AudioList(ItemList):
+    _label_list = AudioLabelList
     _bunch = AudioDataBunch
     config: AudioConfig
 
@@ -304,7 +304,10 @@ class AudioList(ItemList):
         items = AudioList._filter_empty(items)
         super().__init__(items, path, **kwargs)
         cd = config.cache_dir
-        self._label_list = AudioLabelList
+        # After calling init from super class the _label_list fields gets overwritten, thats why its re-initialized
+        self._label_list = self.__class__._label_list
+        # wants to store Audio label list here to shadow the .process method and use audio + config preprocessing?
+        # why not use preprocessor for that?
         if str(path) not in str(cd): 
             config.cache_dir = path / cd
         self.config = config
@@ -436,10 +439,10 @@ class AudioList(ItemList):
         res.items = np.char.add(np.char.add(pref, res.items.astype(str)), suffix)
         return res
 
-    def label_from_json(self, json_func, *args):
-
-        return
-
+    # TODO uncomment this to pass audio_config to ItemList.__init__ whcih is default output in get_label_cls
+    #  when _label_cls is not set in AudioPhonemeLabelList
+    # def _label_from_list(self, *args, **kwargs)->'LabelList':
+    #     return super()._label_from_list(*args, audio_config=self.config, **kwargs)
 
 def try_load(fn: Path) -> Tuple[torch.Tensor, int]:
     if not fn.exists():
