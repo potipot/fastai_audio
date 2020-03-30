@@ -47,9 +47,11 @@ def tfm_crop_time(spectro, sr, crop_duration, hop, pad_mode="zeros"):
     sg = spectro.clone()
     c, y, x = sg.shape
     total_duration = (hop*x)/sr
-    crop_width = int(sr*(crop_duration)/hop)
+    crop_width = math.ceil(sr*(crop_duration)/hop)
     #if crop_duration is longer than total clip, pad with zeros to crop_duration and return
-    if crop_duration >= total_duration: 
+    if crop_duration >= total_duration:
+        raise NotImplementedError("Cannot use padding. Not implemented verbatim")
+        # here the total duration is not correct, cause stft uses border padding too!
         sg_pad = tfm_pad_spectro(spectro, crop_width, pad_mode)
         return sg_pad, None, None
     crop_start = random.randint(0, x-crop_width)

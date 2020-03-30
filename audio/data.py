@@ -280,8 +280,12 @@ class AudioLabelList(LabelList):
    
     def process(self, *args, **kwargs):
         self._pre_process()
-        super().process(*args, **kwargs)
+        # TODO this is a hack to always use tfm_crop_time
+        #  consider removing the _processed attribute and move crop_time
+        #  to proper apply_tfms place
+        #  also accessed in fastai_audio.audio.data@line357
         self.x.config._processed = True
+        super().process(*args, **kwargs)
 
 
 class AudioList(ItemList):
@@ -349,7 +353,7 @@ class AudioList(ItemList):
             spectro = self.create_spectro(item)
             if self.config.cache:
                 self._save_in_cache(fn, spectro)
-        if self.config.duration and self.config._processed: 
+        if self.config.duration and self.config._processed:
                 spectro, start, end = tfm_crop_time(spectro, self.config._sr, self.config.duration, self.config.sg_cfg.hop_length, self.config.pad_mode)
         return AudioItem(path=fn,spectro=spectro,start=start,end=end)
 
