@@ -2,7 +2,7 @@ from IPython.display import Audio
 import mimetypes
 import torchaudio
 from fastai.data_block import ItemBase
-from fastai.vision import Image
+from fastai.vision import Image, transform, listify
 import numpy as np
 import torch
 import warnings
@@ -55,12 +55,30 @@ class AudioItem(ItemBase):
             display(Audio(data=self.sig[:,start:end], rate=self.sr))
         else:
             display(self.ipy_audio)
-        
-    
-    def apply_tfms(self, tfms):
+
+    def apply_tfms(self, tfms, do_resolve:bool=True, duration:int=None):
         for tfm in tfms:
             self.data = tfm(self.data)
         return self
+
+    def apply_tfms_fatai(self, tfms, do_resolve:bool=False, duration:int=None, size:tuple=None):
+        x = self.clone()
+        tfms = listify(tfms)
+        tfms = sorted(tfms, key=lambda o: o.tfm.order)
+        size_tfms = [o for o in tfms if isinstance(o.tfm, transform.TfmCrop)]
+        if do_resolve:
+            for t in tfms: t.resolve()
+        # first loop is used to scale down the size to not work on large imgs, like in resizing buses
+        if duration is not None:
+            crop_target = (duration, n_mels:=128)
+
+        # second loop for applying transforms
+        # for tfm in tfms:
+        #     if tfm in size_tfms:
+        #         if resize_method in (ResizeMethod.CROP,ResizeMethod.PAD):
+        #             x = tfm(x, size=_get_crop_target(size,mult=mult), padding_mode=padding_mode)
+        #     else: x = tfm(x)
+        return x.refresh()
 
     def _reload_signal(self): self._sig,self._sr = torchaudio.load(self.path)
 
