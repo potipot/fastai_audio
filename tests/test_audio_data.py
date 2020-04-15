@@ -103,7 +103,7 @@ def test_nchannels():
 def test_nsamples():
         p = Path('data/misc/6-channel-multichannel/ChannelPlacement.wav')
         a = open_audio(p)
-        assert a.nsamples == 415135
+        assert a.n_samples == 415135
 
 
 def test_empty_open():

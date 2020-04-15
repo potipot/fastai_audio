@@ -2,11 +2,10 @@ from IPython.display import Audio
 import mimetypes
 import torchaudio
 from fastai.data_block import ItemBase
-from fastai.vision import Image, transform, listify
+from fastai.vision import Image, listify, TfmCrop
 import numpy as np
+import math
 import torch
-import warnings
-from pathlib import Path, PosixPath
 
 
 AUDIO_EXTENSIONS = tuple(str.lower(k) for k, v in mimetypes.types_map.items() if v.startswith('audio/'))
@@ -19,13 +18,15 @@ class AudioItem(ItemBase):
         self.max_to_pad = max_to_pad
         self.start, self.end = start, end
 
-    def __str__(self):
+    def __repr__(self):
         return f'{self.__class__.__name__} {round(self.duration, 2)} seconds ({self.nchannels} channels, {self.nsamples} samples @ {self.sr}hz)'
 
     def __len__(self): return self.data.shape[0]
 
     def _repr_html_(self):
         return f'{self.__str__()}<br />{self.ipy_audio._repr_html_()}'
+
+    def clone(self): return AudioItem(spectro=self.spectro, path=self.path)
 
     def reconstruct(self, t): return(AudioItem(spectro=t))
 
@@ -38,8 +39,7 @@ class AudioItem(ItemBase):
         for i,im in enumerate(self.get_spec_images()):
             print(f"Channel {int(i//images_per_channel)}.{int(i%images_per_channel)} ({im.shape[-2]}x{im.shape[-1]}):")
             display(im.rotate(180).flip_lr())
-            
-                         
+
     def get_spec_images(self):
         sg = self.spectro
         if sg is None: return [] 
@@ -56,29 +56,50 @@ class AudioItem(ItemBase):
         else:
             display(self.ipy_audio)
 
-    def apply_tfms(self, tfms, do_resolve:bool=True, duration:int=None):
-        for tfm in tfms:
-            self.data = tfm(self.data)
-        return self
+    def _get_resize_target(self, size):
+        c, features, time_bins = self.data.shape
+        if isinstance(size, int):
+            size = (features, size)
+        return size
 
-    def apply_tfms_fatai(self, tfms, do_resolve:bool=False, duration:int=None, size:tuple=None):
-        x = self.clone()
+    def _get_duration_crop_target(self, duration):
+        *_, features, time_bins = self.data.shape
+        # this works for both modes: fourier bins and waveform
+        if hasattr(self, 'hl'):
+            hl = self.hl
+        else:
+            hl = math.ceil(self.nsamples / time_bins)
+        bins = round(duration/1000 * self.sr / hl)
+        return features, bins
+
+    def resize(self, size, interp_mode="bilinear"):
+        '''Temporary fix to allow image resizing transform'''
+        data = self.data.unsqueeze(0)
+        size_target = self._get_resize_target(size)
+        align_corners = None if interp_mode=='nearest' else False
+        data_new = torch.nn.functional.interpolate(data, size=size_target, mode=interp_mode, align_corners=align_corners)
+        self.data = data_new.squeeze(0)
+        self.sr = self.sr*data_new.shape[-1]/data.shape[-1]
+
+    def apply_tfms(self, tfms, duration:int=1280, size=None, do_resolve:bool=True, padding_mode:str='reflection'):
         tfms = listify(tfms)
-        tfms = sorted(tfms, key=lambda o: o.tfm.order)
-        size_tfms = [o for o in tfms if isinstance(o.tfm, transform.TfmCrop)]
+        size_tfms = [o for o in tfms if isinstance(o.tfm, TfmCrop)]
         if do_resolve:
-            for t in tfms: t.resolve()
-        # first loop is used to scale down the size to not work on large imgs, like in resizing buses
-        if duration is not None:
-            crop_target = (duration, n_mels:=128)
-
-        # second loop for applying transforms
-        # for tfm in tfms:
-        #     if tfm in size_tfms:
-        #         if resize_method in (ResizeMethod.CROP,ResizeMethod.PAD):
-        #             x = tfm(x, size=_get_crop_target(size,mult=mult), padding_mode=padding_mode)
-        #     else: x = tfm(x)
-        return x.refresh()
+            for tfm in tfms:
+                tfm.resolve()
+        x = self.clone()
+        for tfm in tfms:
+            # Reset this attribute, otherwise it treats our object as Image instance looking for px and flow fields
+            setattr(tfm.tfm, '_wrap', None)
+            if tfm in size_tfms:
+                crop_target = x._get_duration_crop_target(duration)
+                x.data = tfm(x.data, size=crop_target, padding_mode=padding_mode)
+            else:
+                x.data = tfm(x.data)
+        if size is not None:
+            sz = size[getattr(self.__class__, '__name__')]
+            x.resize(sz)
+        return x
 
     def _reload_signal(self): self._sig,self._sr = torchaudio.load(self.path)
 
@@ -93,6 +114,7 @@ class AudioItem(ItemBase):
     def sr(self):
         if self._sr is None: self._reload_signal()
         return self._sr
+
     @sr.setter
     def sr(self, sr): self._sr=sr
 
@@ -113,6 +135,7 @@ class AudioItem(ItemBase):
         
     @property
     def data(self): return self.spectro if self.spectro is not None else self.sig
+
     @data.setter
     def data(self, x):
         if self.spectro is not None: self.spectro = x

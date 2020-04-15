@@ -1,3 +1,4 @@
+from annotations import sequences
 from .audio import *
 from .transform import *
 from pathlib import Path as PosixPath
@@ -19,51 +20,23 @@ class EmptyFileException(Exception):
     pass
 
 
-def one_hot_decode(tens:torch.Tensor, n_classes=None):
-    if n_classes is None: n_classes = len(tens)
-    # start from 1 is used to avoid multiply by 0 where classes tens:= [0,1,2 ...]
-    return torch.arange(1, n_classes+1, dtype=tens.dtype, device=tens.device)@tens-1
-
-
 def md5(s):
     return hashlib.md5(s.encode("utf-8")).hexdigest()
 
 
-def sequences(tens, include_cropped=False, c2i: dict = None):
-    """Calculate the number of consecutive values in a tensor signal.
-    If c2i mapping is provided, silence signal is ignored in stats."""
-    tens = one_hot_decode(tens)
-    if include_cropped:
-        i, f = None, None
-    else:
-        i, f = 1, -1
-    if c2i is not None:
-        sil = c2i['sil']
-        if tens[0] == sil: i = None
-        if tens[-1] == sil: f = None
-        tens = tens[tens != sil]
-
-    s = ((tens[1:] - tens[:-1]).nonzero().squeeze() + 1).view(-1)
-    split = s - torch.nn.functional.pad(s[:-1], (1, 0))
-    chunks = torch.split(tens, [*split.tolist(), len(tens) - split.sum()])
-    lengths = np.array([t.numel() for t in chunks])
-    lengths = lengths[i:f]
-    return lengths[lengths > 0]
-
-
 class AudioDataBunch(DataBunch):
-    def show_batch(self, rows: int = 3, ds_type: DatasetType = DatasetType.Train, **kwargs):
+    def show_batch_custom(self, rows: int = 3, ds_type: DatasetType = DatasetType.Train, **kwargs):
         batch = self.dl(ds_type).dataset[:rows]
         prev = None
         for x, y in batch:
             print('-'*60)
             x.show(title=y)
 
-    def show_batch_stats(self, include_cropped=False):
-        lens = np.concatenate([sequences(batch, c2i=self.c2i, include_cropped=include_cropped) for _, y in self.train_dl for batch in y])
+    def show_batch_stats(self, include_edges=False):
+        lens = np.concatenate([sequences(batch, include_edges=include_edges, ignore_values=self.c2i['sil']) for _, y in self.train_dl for batch in y])
         fig, ax = plt.subplots(1)
 
-        ax.hist(lens, bins=lens.max())
+        ax.hist(lens, bins=lens.max().astype('int'))
         ax.set_xlabel('Sequence length')
         ax.set_ylabel('No of counts')
         ax.set_xticks(np.arange(lens.max(), step=5))
