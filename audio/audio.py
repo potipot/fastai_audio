@@ -2,7 +2,7 @@ from IPython.display import Audio
 import mimetypes
 import torchaudio
 from fastai.data_block import ItemBase
-from fastai.vision import Image, listify, TfmCrop
+from fastai.vision import Image, listify, TfmCrop, FlowField
 import numpy as np
 import math
 import torch
@@ -90,16 +90,32 @@ class AudioItem(ItemBase):
         x = self.clone()
         for tfm in tfms:
             # Reset this attribute, otherwise it treats our object as Image instance looking for px and flow fields
-            setattr(tfm.tfm, '_wrap', None)
+            # setattr(tfm.tfm, '_wrap', None)
             if tfm in size_tfms:
+                # setattr(tfm.tfm, '_wrap', None)
                 crop_target = x._get_duration_crop_target(duration)
-                x.data = tfm(x.data, size=crop_target, padding_mode=padding_mode)
+                x = tfm(x, size=crop_target, padding_mode=padding_mode)
             else:
-                x.data = tfm(x.data)
+                x = tfm(x)
         if size is not None:
-            sz = size[getattr(self.__class__, '__name__')]
+            sz = size.get(getattr(self.__class__, '__name__'), x.shape[-1])
             x.resize(sz)
         return x
+
+    def pixel(self, func, **kwargs):
+        self.data = func(self.data, **kwargs)
+        return self
+
+    def coord(self, func, **kwargs):
+        flow = FlowField((1,1), self.data)
+        self.data = func(flow, **kwargs).flow
+        return self
+
+    def lighting(self, func, **kwargs):
+        raise NotImplementedError
+        #TODO study audio normalization
+        data_new = func(self.logit_px, **kwargs).sigmoid()
+        return self
 
     def _reload_signal(self): self._sig,self._sr = torchaudio.load(self.path)
 
