@@ -1,8 +1,10 @@
+from pathlib import Path
+from typing import Callable
+
 from IPython.display import Audio
 import mimetypes
 import torchaudio
-from fastai.data_block import ItemBase
-from fastai.vision import Image, listify, TfmCrop, FlowField
+from fastai.vision import Image, listify, TfmCrop, FlowField, ItemBase
 import numpy as np
 import math
 import torch
@@ -10,13 +12,25 @@ import torch
 
 AUDIO_EXTENSIONS = tuple(str.lower(k) for k, v in mimetypes.types_map.items() if v.startswith('audio/'))
 
+
 class AudioItem(ItemBase):
     def __init__(self, sig=None, sr=None, path=None, spectro=None, max_to_pad=None, start=None, end=None):
-        '''Holds Audio signal and/or specrogram data'''
+        """Holds Audio signal and/or spectrogram data"""
         if isinstance(sig, np.ndarray): sig = torch.from_numpy(sig)
         self._sig, self._sr, self.path, self.spectro = sig, sr, path, spectro
         self.max_to_pad = max_to_pad
         self.start, self.end = start, end
+
+    @classmethod
+    def create(cls, fn: Path, after_open: Callable = None, normalize_loudness=False):
+        if normalize_loudness:
+            # TODO insert optional LUFS normalization here
+            pass
+        else:
+            sig, sr = torchaudio.load(fn)
+        if after_open:
+            sig = after_open(sig, sr)
+        return cls(sig=sig, sr=sr, path=fn)
 
     def __repr__(self):
         return f'{self.__class__.__name__} {round(self.duration, 2)} seconds ({self.nchannels} channels, {self.nsamples} samples @ {self.sr}hz)'
@@ -118,6 +132,19 @@ class AudioItem(ItemBase):
         return self
 
     def _reload_signal(self): self._sig,self._sr = torchaudio.load(self.path)
+
+    def save(self, output:Path=''):
+        default_name = 'out'
+        default_suffix = '.wav'
+        output = Path(output)
+        if not output.is_absolute():
+            if not output.name: output = Path(default_name)
+            if not output.suffix: output = output.with_suffix(default_suffix)
+            if self.path is not None:
+                output = self.path.with_name(output.as_posix())
+            else:
+                output = Path.cwd().with_name(output.as_posix())
+        torchaudio.save(output.as_posix(), src=self.sig, sample_rate=self.sr)
 
     @property
     def sig(self):

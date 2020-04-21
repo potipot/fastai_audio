@@ -4,7 +4,6 @@ from .transform import *
 from pathlib import Path as PosixPath
 from typing import Tuple, Callable
 from IPython.core.debugger import set_trace
-import os
 from collections import Counter
 from dataclasses import dataclass, asdict
 import hashlib
@@ -13,7 +12,7 @@ from fastai.vision import *
 from fastprogress.fastprogress import progress_bar
 import torchaudio
 import warnings
-from torchaudio.transforms import MelSpectrogram, AmplitudeToDB, MFCC
+from torchaudio.transforms import MelSpectrogram, AmplitudeToDB, MFCC, Spectrogram, MelScale
 
 
 class EmptyFileException(Exception):
@@ -25,13 +24,6 @@ def md5(s):
 
 
 class AudioDataBunch(DataBunch):
-    def show_batch_custom(self, rows: int = 3, ds_type: DatasetType = DatasetType.Train, **kwargs):
-        batch = self.dl(ds_type).dataset[:rows]
-        prev = None
-        for x, y in batch:
-            print('-'*60)
-            x.show(title=y)
-
     def show_batch_stats(self, include_edges=False):
         lens = np.concatenate([sequences(batch, include_edges=include_edges, ignore_values=self.c2i['sil']) for _, y in self.train_dl for batch in y])
         fig, ax = plt.subplots(1)
@@ -47,19 +39,42 @@ class AudioDataBunch(DataBunch):
 class SpectrogramConfig:
     '''Configuration for how Spectrograms are generated'''
     f_min: float = 0.0
-    f_max: float = 22050.0
-    hop_length: int = 256
+    f_max: float = None
     n_fft: int = 2560
+    win_length: int = None
+    hop_length: int = None
     n_mels: int = 128
     pad: int = 0
     to_db_scale: bool = True
     top_db: int = 100
-    win_length: int = None
     n_mfcc: int = 20
+    n_stft:int = None
+
+    def __post__init__(self):
+        """Assign some assumed values if those are not provided"""
+        self.win_length = ifnone(self.win_length, self.n_fft)
+        self.hop_length = ifnone(self.hop_length, self.win_length // 2)
+        self.n_stft = ifnone(self.n_stft, self.n_fft // 2 + 1)
+
+    @property
+    def melkwargs(self):
+        d = self.mel_args
+        d.update(self.spec_args); d.pop('n_stft')
+        return d
+
+    @property
+    def mfcc_args(self):
+        return {name: getattr(self, name) for name in ['n_mfcc', 'melkwargs']}
+
+    @property
     def mel_args(self):
-        return {k:v for k, v in asdict(self).items() if k in ["f_min", "f_max", "hop_length", "n_fft", 
-                                                      "n_mels", "pad", "win_length"]}
-        
+        return {name: getattr(self, name) for name in ["f_min", "f_max", "n_stft", "n_mels"]}
+
+    @property
+    def spec_args(self):
+        return {name: getattr(self, name) for name in ["hop_length", "n_fft", "pad", "win_length"]}
+
+
 @dataclass
 class AudioConfig:
     '''Options for pre-processing audio signals'''
@@ -245,7 +260,7 @@ def _set_nchannels(item_path, config, path):
     # Possibly should combine with previous def, but wanted to think more first
     if isinstance(item_path, AudioItem): item_path = item_path.path
     if not os.path.exists(item_path): item_path = path/item_path
-    item = open_audio(Path(item_path))
+    item = AudioItem.create(Path(item_path))
     config._nchannels = item.nchannels
 
 class AudioLabelList(LabelList):
@@ -329,15 +344,17 @@ class AudioList(ItemList):
             config.cache_dir = path / cd
         self.config = config
         self.copy_new += ['config']
+        self._sr = self.register_sampling_rate()
+        self._funcs = self.create_spectro_funcs()
 
     def open(self, fn): # file name, it seems
-        fn=Path(fn)
+        fn = Path(fn)
         if self.path is not None and not fn.exists() and str(self.path) not in str(fn): fn = self.path/item
         if self.config.use_spectro:
-            item=self.add_spectro(fn)
+            item = self.add_spectro(fn)
         else:
             func_to_add = self._get_pad_func() if self.config.max_to_pad or self.config.segment_size else None
-            item=open_audio(fn, func_to_add)
+            item = AudioItem.create(fn, func_to_add)
             self._validate_consistencies(item)
         return item
 
@@ -354,21 +371,21 @@ class AudioList(ItemList):
                                 separate files with different number of channels.''')
 
     def add_spectro(self, fn:PathOrStr, from_item_lists=True):
-        spectro,start,end=None,None,None
+        spectro,start,end = None,None,None
         cache_path = self._get_cache_path(fn)
         if self.config.cache and cache_path.exists():
             spectro = torch.load(cache_path)
         else:
             #Dropping sig and sr off here, should I propogate this to new audio item if I have it?
             func_to_add = self._get_pad_func() if self.config.max_to_pad or self.config.segment_size else None 
-            item=open_audio(fn, func_to_add)
+            item = AudioItem.create(fn, func_to_add)
             self._validate_consistencies(item)
             spectro = self.create_spectro(item)
             if self.config.cache:
                 self._save_in_cache(fn, spectro)
         if self.config.duration and self.config._processed:
                 spectro, start, end = tfm_crop_time(spectro, self.config._sr, self.config.duration, self.config.sg_cfg.hop_length, self.config.pad_mode)
-        return AudioItem(path=fn,spectro=spectro,start=start,end=end)
+        return AudioItem(path=fn, spectro=spectro, start=start, end=end)
 
     def _get_pad_func(self):
         def pad_func(sig, sr): 
@@ -376,20 +393,31 @@ class AudioList(ItemList):
             num_samples = int((sr*pad_len)/1000)
             return tfm_padtrim_signal(sig, num_samples, pad_mode="zeros")
         return pad_func
-    
+
+    def create_spectro_funcs(self):
+        cfg = self.config.sg_cfg
+        return {
+            'spec': Spectrogram(**cfg.spec_args),
+            'to_mel': MelScale(sample_rate=self._sr, **cfg.mel_args),
+            'mfcc': MFCC(sample_rate=self._sr, **cfg.mfcc_args),
+            'to_db': AmplitudeToDB(top_db=cfg.top_db)
+        }
+
     def create_spectro(self, item:AudioItem):
-        if self.config.mfcc: 
-            mel = MFCC(sample_rate=item.sr, n_mfcc=self.config.sg_cfg.n_mfcc, melkwargs=self.config.sg_cfg.mel_args())(item.sig)
+        assert(item.sr == self._sr), f'AudioItem has different sr({item.sr}) than the ItemList{self._sr}, forgot to resample?'
+        if self.config.mfcc:
+            spec = self._funcs['mfcc'](item.sig)
         else:
-            mel = MelSpectrogram(**(self.config.sg_cfg.mel_args()))(item.sig)
+            spec = self._funcs['spec'](item.sig)
+            spec = self._funcs['to_mel'](spec)
             if self.config.sg_cfg.to_db_scale: 
-                mel = AmplitudeToDB(top_db=self.config.sg_cfg.top_db)(mel)
-        mel = mel.detach()
+                spec = self._funcs['to_db'](spec)
+        spec = spec.detach()
         if self.config.standardize: 
-            mel = standardize(mel)
+            spec = standardize(spec)
         if self.config.delta: 
-            mel = torch.cat([torch.stack([m,torchdelta(m),torchdelta(m, order=2)]) for m in mel]) 
-        return mel
+            spec = torch.cat([torch.stack([m,torchdelta(m),torchdelta(m, order=2)]) for m in spec])
+        return spec
 
     def _get_cache_path(self, fn:Path):
         folder = md5(str(asdict(self.config))+str(asdict(self.config.sg_cfg)))
@@ -405,9 +433,9 @@ class AudioList(ItemList):
     def get(self, i):
         fn = super().get(i)
         return self.open(fn)
-    
+
     def reconstruct(self, x): return x
-    
+
     def stats(self, prec=0, devs=3, figsize=(15,5)):
         '''Displays samples, plots file lengths and returns outliers of the AudioList'''
         len_dict = {}
@@ -422,7 +450,7 @@ class AudioList(ItemList):
         print("Sample Rates: ")
         for sr,count in Counter(rates).items(): print(f"{int(sr)}: {count} files")
         self._plot_lengths(lens, prec, figsize)
-        return len_dict 
+        return len_dict
     
     def _plot_lengths(self, lens, prec, figsize):
         '''Plots a list of file lengths displaying prec digits of precision'''
@@ -456,23 +484,17 @@ class AudioList(ItemList):
         res.items = np.char.add(np.char.add(pref, res.items.astype(str)), suffix)
         return res
 
-    # TODO uncomment this to pass audio_config to ItemList.__init__ whcih is default output in get_label_cls
-    #  when _label_cls is not set in AudioPhonemeLabelList
-    # def _label_from_list(self, *args, **kwargs)->'LabelList':
-    #     return super()._label_from_list(*args, audio_config=self.config, **kwargs)
-
-def try_load(fn: Path) -> Tuple[torch.Tensor, int]:
-    if not fn.exists():
-        raise FileNotFoundError(f"{fn}' could not be found")
-    if not str(fn).lower().endswith(AUDIO_EXTENSIONS):
-        raise Exception("Invalid audio file")
-
-    return torchaudio.load(fn)
+    def register_sampling_rate(self):
+        if self.config.resample_to is None:
+            _, sr = torchaudio.load(np.random.choice(self.items))
+        else:
+            sr = self.config.resample_to
+        return sr
 
 
 def open_audio(fn: Path, after_open: Callable = None) -> AudioItem:
     try:
-        sig, sr = try_load(fn)
+        sig, sr = torchaudio.load(fn)
         if after_open:
             sig = after_open(sig, sr)
         return AudioItem(sig=sig, sr=sr, path=fn)
