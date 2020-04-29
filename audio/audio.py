@@ -1,44 +1,51 @@
+import warnings
 from pathlib import Path
 from typing import Callable
 
 from IPython.display import Audio
 import mimetypes
 import torchaudio
-from fastai.vision import Image, listify, TfmCrop, FlowField, ItemBase
+from fastai.vision import Image, listify, TfmCrop, FlowField, ItemBase, ifnone
 import numpy as np
 import math
 import torch
+import loudnorm
+import librosa.display
 
+from utils import _channel_first, _signal_first, _to_numpy
 
 AUDIO_EXTENSIONS = tuple(str.lower(k) for k, v in mimetypes.types_map.items() if v.startswith('audio/'))
 
 
 class AudioItem(ItemBase):
-    def __init__(self, sig=None, sr=None, path=None, spectro=None, max_to_pad=None, start=None, end=None):
+    def __init__(self, sig=None, sr=None, path=None, spectro=None, max_to_pad=None, start=None, end=None, loudness=None):
         """Holds Audio signal and/or spectrogram data"""
         if isinstance(sig, np.ndarray): sig = torch.from_numpy(sig)
         self._sig, self._sr, self.path, self.spectro = sig, sr, path, spectro
+        self._loudness = loudness
         self.max_to_pad = max_to_pad
         self.start, self.end = start, end
 
     @classmethod
-    def create(cls, fn: Path, after_open: Callable = None, normalize_loudness=False):
-        if normalize_loudness:
-            # TODO insert optional LUFS normalization here
-            pass
-        else:
-            sig, sr = torchaudio.load(fn)
+    def create(cls, fn: Path, after_open: Callable = None, target_loudness:float=-23.0):
+        sig, sr = torchaudio.load(fn)
         if after_open:
             sig = after_open(sig, sr)
-        return cls(sig=sig, sr=sr, path=fn)
+            raise NotImplementedError
+        #loudness correcting part
+        loudness = loudnorm.get_loudness(sig, sr)
+        item = cls(sig=sig, sr=sr, path=fn, loudness=loudness)
+        if target_loudness: item.set_loudness(target_loudness, clipping_method='soft_smart')
+        return item
 
     def __repr__(self):
-        return f'{self.__class__.__name__} {round(self.duration, 2)} seconds ({self.nchannels} channels, {self.nsamples} samples @ {self.sr}hz)'
+        return f'{self.__class__.__name__} {round(self.duration, 2)} s ({self.nchannels} ch, {self.loudness:.2f} LUFS, {self.nsamples} samples @ {self.sr} Hz)'
 
     def __len__(self): return self.data.shape[0]
 
     def _repr_html_(self):
-        return f'{self.__str__()}<br />{self.ipy_audio._repr_html_()}'
+        librosa.display.waveplot(self.sig.squeeze().numpy(), sr=self.sr)
+        return f'{self.__repr__()}<br />{self.ipy_audio._repr_html_()}'
 
     def clone(self): return AudioItem(spectro=self.spectro, path=self.path)
 
@@ -54,11 +61,6 @@ class AudioItem(ItemBase):
             print(f"Channel {int(i//images_per_channel)}.{int(i%images_per_channel)} ({im.shape[-2]}x{im.shape[-1]}):")
             display(im.rotate(180).flip_lr())
 
-    def get_spec_images(self):
-        sg = self.spectro
-        if sg is None: return [] 
-        return [Image(s.unsqueeze(0)) for s in sg]
-
     def hear(self, title=None):
         if title is not None: print("Label:", title)
         if self.sig is None: self._check_signal()
@@ -69,6 +71,24 @@ class AudioItem(ItemBase):
             display(Audio(data=self.sig[:,start:end], rate=self.sr))
         else:
             display(self.ipy_audio)
+
+    def get_spec_images(self):
+        sg = self.spectro
+        if sg is None: return []
+        return [Image(s.unsqueeze(0)) for s in sg]
+
+    def set_loudness(self, target_loudness, clipping_method:str = 'soft_smart', **kwargs):
+        sig = _channel_first(self.sig)
+        input_loudness = self.loudness
+        output = loudnorm.volume(sig, input_loudness, target_loudness)
+        output = loudnorm.clip(clipping_method, output, **kwargs)
+        self._loudness = loudnorm.get_loudness(output, self.sr)
+        self.sig = _signal_first(output)
+        if (diff:=abs(self._loudness-target_loudness))>0.5:
+            warnings.warn(f'Target loudness not reached due to clipping, {diff=:.2f} LUFS')
+            # recurrent execution until the output loudness is within acceptable tolerance
+            #self.set_loudness(target_loudness, clipping_method=clipping_method, **kwargs)
+        return self
 
     def _get_resize_target(self, size):
         c, features, time_bins = self.data.shape
@@ -87,7 +107,7 @@ class AudioItem(ItemBase):
         return features, bins
 
     def resize(self, size, interp_mode="bilinear"):
-        '''Temporary fix to allow image resizing transform'''
+        """Temporary fix to allow image resizing transform"""
         data = self.data.unsqueeze(0)
         size_target = self._get_resize_target(size)
         align_corners = None if interp_mode=='nearest' else False
@@ -147,9 +167,16 @@ class AudioItem(ItemBase):
         torchaudio.save(output.as_posix(), src=self.sig, sample_rate=self.sr)
 
     @property
+    def loudness(self):
+        loudness = ifnone(self._loudness, loudnorm.get_loudness(self.sig, self.sr))
+        self._loudness = loudness
+        return self._loudness
+
+    @property
     def sig(self):
         if self._sig is None: self._reload_signal()
         return self._sig
+
     @sig.setter
     def sig(self, sig): self._sig = sig
 
@@ -167,7 +194,7 @@ class AudioItem(ItemBase):
     @property
     def ipy_audio(self): 
         if self.sig is None: self._check_signal()
-        return Audio(data=self.sig, rate=self.sr)
+        return Audio(data=self.sig.squeeze().numpy(), rate=self.sr)
 
     @property
     def duration(self): 
@@ -191,3 +218,4 @@ class AudioItem(ItemBase):
     @property
     def nchannels(self): 
         return self.sig.shape[-2]
+

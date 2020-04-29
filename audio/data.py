@@ -13,7 +13,7 @@ from fastprogress.fastprogress import progress_bar
 import torchaudio
 import warnings
 from torchaudio.transforms import MelSpectrogram, AmplitudeToDB, MFCC, Spectrogram, MelScale
-
+import loudnorm
 
 class EmptyFileException(Exception):
     pass
@@ -258,10 +258,12 @@ def _set_sr(item_path, config, path):
 
 def _set_nchannels(item_path, config, path):
     # Possibly should combine with previous def, but wanted to think more first
-    if isinstance(item_path, AudioItem): item_path = item_path.path
+    if isinstance(item_path, AudioItem):
+        raise TypeError
+        item_path = item_path.path
     if not os.path.exists(item_path): item_path = path/item_path
-    item = AudioItem.create(Path(item_path))
-    config._nchannels = item.nchannels
+    info = loudnorm.get_file_info(item_path)
+    config._nchannels = info.channels
 
 class AudioLabelList(LabelList):
 
@@ -345,7 +347,7 @@ class AudioList(ItemList):
         self.config = config
         self.copy_new += ['config']
         self._sr = self.register_sampling_rate()
-        self._funcs = self.create_spectro_funcs()
+        self._funcs = self._create_spectro_funcs()
 
     def open(self, fn): # file name, it seems
         fn = Path(fn)
@@ -353,6 +355,7 @@ class AudioList(ItemList):
         if self.config.use_spectro:
             item = self.add_spectro(fn)
         else:
+            raise NotImplementedError
             func_to_add = self._get_pad_func() if self.config.max_to_pad or self.config.segment_size else None
             item = AudioItem.create(fn, func_to_add)
             self._validate_consistencies(item)
@@ -370,22 +373,21 @@ class AudioList(ItemList):
                                 not contain different number of channels. Please set downmix=true in AudioConfig or 
                                 separate files with different number of channels.''')
 
-    def add_spectro(self, fn:PathOrStr, from_item_lists=True):
-        spectro,start,end = None,None,None
+    def add_spectro(self, fn:PathOrStr):
         cache_path = self._get_cache_path(fn)
+        func_to_add = self._get_pad_func() if self.config.max_to_pad or self.config.segment_size else None
+        """Here audio file is loaded immediately after creation"""
+        item = AudioItem.create(fn, func_to_add)
+        self._validate_consistencies(item)
         if self.config.cache and cache_path.exists():
             spectro = torch.load(cache_path)
         else:
             #Dropping sig and sr off here, should I propogate this to new audio item if I have it?
-            func_to_add = self._get_pad_func() if self.config.max_to_pad or self.config.segment_size else None 
-            item = AudioItem.create(fn, func_to_add)
-            self._validate_consistencies(item)
             spectro = self.create_spectro(item)
             if self.config.cache:
                 self._save_in_cache(fn, spectro)
-        if self.config.duration and self.config._processed:
-                spectro, start, end = tfm_crop_time(spectro, self.config._sr, self.config.duration, self.config.sg_cfg.hop_length, self.config.pad_mode)
-        return AudioItem(path=fn, spectro=spectro, start=start, end=end)
+        item.spectro = spectro
+        return item
 
     def _get_pad_func(self):
         def pad_func(sig, sr): 
@@ -394,7 +396,7 @@ class AudioList(ItemList):
             return tfm_padtrim_signal(sig, num_samples, pad_mode="zeros")
         return pad_func
 
-    def create_spectro_funcs(self):
+    def _create_spectro_funcs(self):
         cfg = self.config.sg_cfg
         return {
             'spec': Spectrogram(**cfg.spec_args),
