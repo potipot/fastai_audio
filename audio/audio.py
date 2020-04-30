@@ -12,7 +12,8 @@ import torch
 import loudnorm
 import librosa.display
 
-from utils import _channel_first, _signal_first, _to_numpy
+from .config import AudioConfig
+from utils import _channel_first, _signal_first
 
 AUDIO_EXTENSIONS = tuple(str.lower(k) for k, v in mimetypes.types_map.items() if v.startswith('audio/'))
 
@@ -25,6 +26,52 @@ class AudioItem(ItemBase):
         self._loudness = loudness
         self.max_to_pad = max_to_pad
         self.start, self.end = start, end
+
+    def open(self):
+        sig, sr = torchaudio.load(self.path)
+        self.sig = sig
+        self.sr = sr
+
+    def validate_consistencies(self, config):
+        if (config._sr is not None) and (self.sr != config._sr):
+            raise ValueError(f'''Multiple sample rates detected. Sample rate {self.sr} of file {self.path} 
+                                does not match config sample rate {config._sr} 
+                                this means your dataset has multiple different sample rates, 
+                                please choose one and set resample_to to that value''')
+        if (config._nchannels is not None) and (config._nchannels != self.nchannels):
+            raise ValueError(f'''Multiple channel sizes detected. Channel size {self.nchannels} of file 
+                                {self.path} does not match others' channel size of {config._nchannels}. A dataset may
+                                not contain different number of channels. Please set downmix=true in AudioConfig or 
+                                separate files with different number of channels.''')
+
+    def register_spectro(self, config:AudioConfig):
+        if self.path is None: raise ValueError("item path wasn't provided")
+        cache_path = config.get_cache_path(self.path)
+        self.validate_consistencies(config)
+        if cache_path.exists():
+            spectro = torch.load(cache_path)
+        else:
+            spectro = self.create_spectro(config)
+            if config.cache:
+                config.save_in_cache(self.path, spectro)
+        self.spectro = spectro
+
+    def create_spectro(self, config):
+        if config.mfcc:
+            spec = config.sg_funcs.mfcc(self.sig)
+        else:
+            spec = config.sg_funcs.spec(self.sig)
+            spec = config.sg_funcs.to_mel(spec)
+            if config.sg_cfg.to_db_scale:
+                spec = config.sg_funcs.to_db(spec)
+        spec = spec.detach()
+        if config.standardize:
+            raise NotImplementedError
+            spec = standardize(spec)
+        if config.delta:
+            raise NotImplementedError
+            spec = torch.cat([torch.stack([m,torchdelta(m),torchdelta(m, order=2)]) for m in spec])
+        return spec
 
     @classmethod
     def create(cls, fn: Path, after_open: Callable = None, target_loudness:float=-23.0):
