@@ -27,10 +27,27 @@ class AudioItem(ItemBase):
         self.max_to_pad = max_to_pad
         self.start, self.end = start, end
 
-    def open(self):
-        sig, sr = torchaudio.load(self.path)
-        self.sig = sig
-        self.sr = sr
+    def calc(self, func, kwargs):
+        if func is Callable:
+            return func(self, **kwargs)
+        elif isinstance(func, str):
+            return getattr(self, func)(**kwargs)
+
+    @classmethod
+    def open(cls, path:Path, after_open:dict={}):
+        sig, sr = torchaudio.load(path)
+        this = cls(sig, sr, path)
+        # after open should be a dict structured as:
+        # key - callable or cls method name, value - params for the func
+        #     "Apply to image `x`, wrapping it if necessary."
+        #     if self._wrap:
+        #         return getattr(x, self._wrap)(self.func, *args, **kwargs)
+        #     else:
+        #         return self.func(x, *args, **kwargs)
+
+        for func, args in after_open.items():
+            this = this.calc(func, args)
+        return this
 
     def validate_consistencies(self, config):
         if (config._sr is not None) and (self.sr != config._sr):
@@ -236,6 +253,17 @@ class AudioItem(ItemBase):
     def sr(self, sr): self._sr=sr
 
     @property
+    def data(self):
+        return self.spectro if self.spectro is not None else self.sig
+
+    @data.setter
+    def data(self, x):
+        if self.spectro is not None:
+            self.spectro = x
+        else:
+            self.sig = x
+
+    @property
     def shape(self): return self.data.shape
 
     @property
@@ -249,20 +277,12 @@ class AudioItem(ItemBase):
         else: 
             si, ei = torchaudio.info(str(self.path))
             return si.length/si.rate
-        
-    @property
-    def data(self): return self.spectro if self.spectro is not None else self.sig
-
-    @data.setter
-    def data(self, x):
-        if self.spectro is not None: self.spectro = x
-        else:                        self.sig = x
     
     @property
-    def nsamples(self): 
+    def nsamples(self):
         return self.sig.shape[-1]
-    
+
     @property
-    def nchannels(self): 
+    def nchannels(self):
         return self.sig.shape[-2]
 

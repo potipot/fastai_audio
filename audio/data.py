@@ -107,8 +107,8 @@ def _set_nchannels(item_path, config, path):
     info = loudnorm.get_file_info(item_path)
     config._nchannels = info.channels
 
-class AudioLabelList(LabelList):
 
+class AudioLabelList(LabelList):
     def _pre_process(self):
         x, y = self.x, self.y
         cfg = x.config
@@ -165,6 +165,7 @@ class AudioList(ItemList):
     _bunch = AudioDataBunch
     config: AudioConfig
 
+    @staticmethod
     def _filter_empty(items):
         def _filter(fn: Path) -> bool:
             return os.path.exists(fn) and os.path.getsize(fn) > 0
@@ -190,19 +191,17 @@ class AudioList(ItemList):
         self.copy_new += ['config']
         self._sr = self.register_sampling_rate()
 
-    def open(self, fn): # file name, it seems
-        fn = Path(fn)
-        if self.path is not None and not fn.exists() and str(self.path) not in str(fn): fn = self.path/item
-        item = AudioItem(path=fn)
-        item.open()
+    # TODO remove this method
+    def open(self, path:Path):
+        audio = AudioItem.open(path=path)
         if self.config.use_spectro:
-            item.register_spectro(self.config)
+            audio.register_spectro(self.config)
         else:
             raise NotImplementedError
             func_to_add = self._get_pad_func() if self.config.max_to_pad or self.config.segment_size else None
-            item = AudioItem.create(fn, func_to_add)
-            item.validate_consistencies(self.config)
-        return item
+            audio = AudioItem.create(path, func_to_add)
+            audio.validate_consistencies(self.config)
+        return audio
 
     def _get_pad_func(self):
         def pad_func(sig, sr): 
@@ -213,7 +212,10 @@ class AudioList(ItemList):
 
     def get(self, i):
         fn = super().get(i)
-        return self.open(fn)
+        audio = AudioItem.open(fn)
+        if self.config.use_spectro:
+            audio.register_spectro(self.config)
+        return audio
 
     def reconstruct(self, x, **kwargs): return x
 
@@ -273,17 +275,9 @@ class AudioList(ItemList):
 
 
 def open_audio(fn: Path, after_open: Callable = None) -> AudioItem:
-    try:
-        sig, sr = torchaudio.load(fn)
-        if after_open:
-            sig = after_open(sig, sr)
-        return AudioItem(sig=sig, sr=sr, path=fn)
-    except RuntimeError as e:
-        err_msg = f"Error loading file at {fn}"
-        if os.path.exists(fn) and os.path.getsize(fn) == 0:
-            err_msg = f"{err_msg} of size 0 with Torch Audio: {e}"
-            raise EmptyFileException(err_msg)
-        else:
-            err_msg = f"{err_msg} with Torch Audio: {e}"
-            raise RuntimeError(err_msg)
+    sig, sr = torchaudio.load(fn)
+    if after_open:
+        sig = after_open(sig, sr)
+    return AudioItem(sig=sig, sr=sr, path=fn)
+
 

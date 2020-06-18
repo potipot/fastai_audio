@@ -14,6 +14,7 @@ from librosa.effects import split
 from torchaudio import transforms
 from scipy.signal import resample_poly
 
+AUDIO_CLASS = None #AudioItem
 
 #Code altered from a kaggle kernel shared by @daisukelab, scales a spectrogram
 #to be floats between 0 and 1 as this is how most 3 channel images are handled
@@ -195,28 +196,28 @@ def tfm_resample(signal, sr, sr_new):
     resampled = resample_poly(sig_np, int(sr_new/sr_gcd), int(sr/sr_gcd), axis=-1)
     return torch.from_numpy(resampled)
 
-def tfm_shift(ai:AudioItem, max_pct=0.2):
+def tfm_shift(ai:AUDIO_CLASS, max_pct=0.2):
     v = (.5 - random.random())*max_pct*len(ai.sig)
     sig = shift(ai.sig, v, cval=.0)
     sig = torch.tensor(sig)
-    return AudioItem(sig=sig, sr=ai.sr)
+    return AUDIO_CLASS(sig=sig, sr=ai.sr)
 
-def tfm_add_white_noise(ai:AudioItem, noise_scl=0.005, **kwargs)->AudioItem:
+def tfm_add_white_noise(ai:AUDIO_CLASS, noise_scl=0.005, **kwargs)->AUDIO_CLASS:
     noise = torch.randn_like(ai.sig) * noise_scl
-    return AudioItem(ai.sig + noise, ai.sr)
+    return AUDIO_CLASS(ai.sig + noise, ai.sr)
 
-def tfm_modulate_volume(ai:AudioItem, lower_gain=.1, upper_gain=1.2, **kwargs)->AudioItem:
+def tfm_modulate_volume(ai:AUDIO_CLASS, lower_gain=.1, upper_gain=1.2, **kwargs)->AUDIO_CLASS:
     modulation = random.uniform(lower_gain, upper_gain)
-    return AudioItem(ai.sig * modulation, ai.sr)
+    return AUDIO_CLASS(ai.sig * modulation, ai.sr)
 
-def tfm_random_cutout(ai:AudioItem, pct_to_cut=.15, **kwargs)->AudioItem:
+def tfm_random_cutout(ai:AUDIO_CLASS, pct_to_cut=.15, **kwargs)->AUDIO_CLASS:
     """Randomly replaces `pct_to_cut` of signal with silence. Similar to grainy radio."""
     copy = ai.sig.clone()
     mask = (torch.rand_like(copy)>pct_to_cut).float()
     masked = copy * mask
-    return AudioItem(masked,ai.sr)
+    return AUDIO_CLASS(masked, ai.sr)
 
-def tfm_pad_with_silence(ai:AudioItem, pct_to_pad=.15, min_to_pad=None, max_to_pad=None, **kwargs)->AudioItem:
+def tfm_pad_with_silence(ai:AUDIO_CLASS, pct_to_pad=.15, min_to_pad=None, max_to_pad=None, **kwargs)->AUDIO_CLASS:
     """Adds silence to beginning or end of signal, simulating microphone cut at start of end of audio."""
     if max_to_pad is None: max_to_pad = int(ai.sig.shape[0] * 0.15)
     if min_to_pad is None: min_to_pad = -max_to_pad
@@ -224,25 +225,25 @@ def tfm_pad_with_silence(ai:AudioItem, pct_to_pad=.15, min_to_pad=None, max_to_p
     copy = ai.sig.clone()
     if pad >= 0: copy[0:pad] = 0
     else: copy[pad:] = 0
-    return AudioItem(copy,ai.sr)
+    return AUDIO_CLASS(copy, ai.sr)
 
-def tfm_pitch_warp(ai:AudioItem, shift_by_pitch=None, bins_per_octave=12, **kwargs)->AudioItem:
+def tfm_pitch_warp(ai:AUDIO_CLASS, shift_by_pitch=None, bins_per_octave=12, **kwargs)->AUDIO_CLASS:
     """CAUTION - slow!"""
     min_len = 600 # librosa requires a signal of length at least 500
     copy = ai.sig.clone()
     if (copy.shape[0] < min_len): copy = torch.cat((copy, torch.zeros(min_len - copy.shape[0])))
     if shift_by_pitch is None: shift_by_pitch = random.uniform(-3, 3)
     sig = torch.tensor(librosa.effects.pitch_shift(np.array(copy), ai.sr, shift_by_pitch, bins_per_octave))
-    return AudioItem(sig,ai.sr)
+    return AUDIO_CLASS(sig, ai.sr)
 
-def tfm_down_and_up(ai:AudioItem, sr_divisor=2, **kwargs)->AudioItem:
+def tfm_down_and_up(ai:AUDIO_CLASS, sr_divisor=2, **kwargs)->AUDIO_CLASS:
     """CAUTION - slow!"""
     copy = np.array(ai.sig.clone())
     down = librosa.audio.resample(copy, ai.sr, ai.sr/sr_divisor)
     sig = torch.tensor(librosa.audio.resample(down, ai.sr/sr_divisor, ai.sr))
-    return AudioItem(sig,ai.sr)
+    return AUDIO_CLASS(sig, ai.sr)
 
-def tfm_pad_or_trim(ai:AudioItem, mx, trim_section="mid", pad_at_end=True, **kwargs):
+def tfm_pad_or_trim(ai:AUDIO_CLASS, mx, trim_section="mid", pad_at_end=True, **kwargs):
     """Pad tensor with zeros (silence) until it reaches length `mx` frames, or trim clip to length `mx` frames"""
     sig = ai.sig.clone()
     siglen = len(sig)
@@ -259,7 +260,7 @@ def tfm_pad_or_trim(ai:AudioItem, mx, trim_section="mid", pad_at_end=True, **kwa
             nsig = sig.narrow(0, siglen-mx, mx)
         else:
             nsig = sig.narrow(0, 0, mx)
-    return AudioItem(sig=nsig, sr=ai.sr)
+    return AUDIO_CLASS(sig=nsig, sr=ai.sr)
 
 def tfm_downmix(signal):
     return torch.mean(signal, 0,True)
