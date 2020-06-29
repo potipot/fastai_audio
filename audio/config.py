@@ -88,6 +88,7 @@ class AudioConfig:
     silence_threshold: int = 20
     segment_size: int = None
     resample_to: int = None
+    target_loudness: float = -23.0
     standardize: bool = False
     downmix: bool = False
 

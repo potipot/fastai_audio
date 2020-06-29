@@ -191,17 +191,17 @@ class AudioList(ItemList):
         self.copy_new += ['config']
         self._sr = self.register_sampling_rate()
 
-    # TODO remove this method
-    def open(self, path:Path):
-        audio = AudioItem.open(path=path)
-        if self.config.use_spectro:
-            audio.register_spectro(self.config)
-        else:
-            raise NotImplementedError
-            func_to_add = self._get_pad_func() if self.config.max_to_pad or self.config.segment_size else None
-            audio = AudioItem.create(path, func_to_add)
-            audio.validate_consistencies(self.config)
-        return audio
+    # # TODO remove this method
+    # def open(self, path:Path):
+    #     audio = AudioItem.open(path=path)
+    #     if self.config.use_spectro:
+    #         audio.register_spectro(self.config)
+    #     else:
+    #         raise NotImplementedError
+    #         func_to_add = self._get_pad_func() if self.config.max_to_pad or self.config.segment_size else None
+    #         audio = AudioItem.create(path, func_to_add)
+    #         audio.validate_consistencies(self.config)
+    #     return audio
 
     def _get_pad_func(self):
         def pad_func(sig, sr): 
@@ -211,8 +211,10 @@ class AudioList(ItemList):
         return pad_func
 
     def get(self, i):
-        fn = super().get(i)
-        audio = AudioItem.open(fn)
+        file_name = super().get(i)
+        audio = AudioItem.open(file_name)
+        # noise_reduce
+        audio.preprocess(self.config)
         if self.config.use_spectro:
             audio.register_spectro(self.config)
         return audio

@@ -10,6 +10,7 @@ import numpy as np
 import math
 import torch
 import src.loudnorm
+import noisereduce as nr
 import librosa.display
 
 from .config import AudioConfig
@@ -33,20 +34,19 @@ class AudioItem(ItemBase):
         elif isinstance(func, str):
             return getattr(self, func)(**kwargs)
 
+    def preprocess(self, config:AudioConfig):
+        """Apply raw waveform preprocessing: loudnorm and noise reduction"""
+        # noise removing
+        if config.silence_threshold:
+            self._reduce_noise(config.silence_threshold)
+        # loudness correcting part
+        if config.target_loudness: self._set_loudness(config.target_loudness, clipping_method='soft_smart')
+        return self
+
     @classmethod
-    def open(cls, path:Path, after_open:dict={}):
+    def open(cls, path:Path):
         sig, sr = torchaudio.load(path)
         this = cls(sig, sr, path)
-        # after open should be a dict structured as:
-        # key - callable or cls method name, value - params for the func
-        #     "Apply to image `x`, wrapping it if necessary."
-        #     if self._wrap:
-        #         return getattr(x, self._wrap)(self.func, *args, **kwargs)
-        #     else:
-        #         return self.func(x, *args, **kwargs)
-
-        for func, args in after_open.items():
-            this = this.calc(func, args)
         return this
 
     def validate_consistencies(self, config):
@@ -90,18 +90,6 @@ class AudioItem(ItemBase):
             spec = torch.cat([torch.stack([m,torchdelta(m),torchdelta(m, order=2)]) for m in spec])
         return spec
 
-    @classmethod
-    def create(cls, fn: Path, after_open: Callable = None, target_loudness:float=-23.0):
-        sig, sr = torchaudio.load(fn)
-        if after_open:
-            sig = after_open(sig, sr)
-            raise NotImplementedError
-        #loudness correcting part
-        loudness = loudnorm.get_loudness(sig, sr)
-        item = cls(sig=sig, sr=sr, path=fn, loudness=loudness)
-        if target_loudness: item.set_loudness(target_loudness, clipping_method='soft_smart')
-        return item
-
     def __repr__(self):
         return f'{self.__class__.__name__} {round(self.duration, 2)} s ({self.nchannels} ch, {self.loudness:.2f} LUFS, {self.nsamples} samples @ {self.sr} Hz)'
 
@@ -111,7 +99,7 @@ class AudioItem(ItemBase):
         librosa.display.waveplot(self.sig.squeeze().numpy(), sr=self.sr)
         return f'{self.__repr__()}<br />{self.ipy_audio._repr_html_()}'
 
-    def clone(self): return AudioItem(spectro=self.spectro, path=self.path)
+    def clone(self): return AudioItem(spectro=self.spectro, path=self.path, sr=self.sr, sig=self.sig, loudness=self.loudness)
 
     def reconstruct(self, t): return(AudioItem(spectro=t))
 
@@ -141,14 +129,34 @@ class AudioItem(ItemBase):
         if sg is None: return []
         return [Image(s.unsqueeze(0)) for s in sg]
 
-    def set_loudness(self, target_loudness, clipping_method:str = 'soft_smart', **kwargs):
+    def _evaluate_loudness(self, signal, sr):
+        if (signal is not None) and (sr is not None):
+            loudness = src.loudnorm.get_loudness(signal, sr)
+        else:
+            loudness = None
+        return loudness
+
+    def _reduce_noise(self, silence_threshold: int = 30):
+        """a function that cuts the leading and trailing noise from audio signal and uses it as a sample for noise
+        reducing algorithm. Original waveform is being replaced. *db* is used as the difference between signal and noise"""
+        new_sig, (trim_left, trim_right) = librosa.effects.trim(self.sig, top_db=silence_threshold)
+        noise = torch.cat((self.sig[:, :trim_left], self.sig[:, trim_right:]), dim=1)
+
+        if noise.numel():
+            # noise is not empty, otherwise cannot perform analysis
+            sig = self.sig.squeeze().numpy()
+            noise = noise.squeeze().numpy()
+            reduced_noise = nr.reduce_noise(audio_clip=sig, noise_clip=noise, verbose=False, prop_decrease=0.9)
+            # reshape sig
+            self.sig = torch.from_numpy(reduced_noise).view(1, -1)
+
+    def _set_loudness(self, target_loudness, clipping_method:str = 'soft_smart', **kwargs):
         sig = _channel_first(self.sig)
         input_loudness = self.loudness
         output = src.loudnorm.volume(sig, input_loudness, target_loudness)
         output = src.loudnorm.clip(clipping_method, output, **kwargs)
-        self._loudness = src.loudnorm.get_loudness(output, self.sr)
         self.sig = _signal_first(output)
-        if (diff:=abs(self._loudness-target_loudness))>0.5:
+        if (diff:=abs(self.loudness-target_loudness))>0.5:
             warnings.warn(f'Target loudness not reached due to clipping, {diff=:.2f} LUFS')
             # recurrent execution until the output loudness is within acceptable tolerance
             #self.set_loudness(target_loudness, clipping_method=clipping_method, **kwargs)
@@ -215,7 +223,9 @@ class AudioItem(ItemBase):
         data_new = func(self.logit_px, **kwargs).sigmoid()
         return self
 
-    def _reload_signal(self): self._sig,self._sr = torchaudio.load(self.path)
+    def _reload_signal(self):
+        raise RuntimeError("Shouldn't be reloading signal, what is the purpose?")
+        self._sig,self._sr = torchaudio.load(self.path)
 
     def save(self, output:Path=''):
         default_name = 'out'
@@ -232,8 +242,8 @@ class AudioItem(ItemBase):
 
     @property
     def loudness(self):
-        loudness = ifnone(self._loudness, src.loudnorm.get_loudness(self.sig, self.sr))
-        self._loudness = loudness
+        if self._loudness is None:
+            self._loudness = self._evaluate_loudness(self.sig, self.sr)
         return self._loudness
 
     @property
@@ -242,7 +252,9 @@ class AudioItem(ItemBase):
         return self._sig
 
     @sig.setter
-    def sig(self, sig): self._sig = sig
+    def sig(self, sig):
+        self._sig = sig
+        self._loudness = self._evaluate_loudness(self.sig, self.sr)
 
     @property
     def sr(self):
