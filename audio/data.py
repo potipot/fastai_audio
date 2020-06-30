@@ -185,7 +185,7 @@ class AudioList(ItemList):
         self._label_list = self.__class__._label_list
         # wants to store Audio label list here to shadow the .process method and use audio + config preprocessing?
         # why not use preprocessor for that?
-        if str(path) not in str(cd): 
+        if str(path) not in str(cd):
             config.cache_dir = path / cd
         self.config = config
         self.copy_new += ['config']
@@ -212,11 +212,11 @@ class AudioList(ItemList):
 
     def get(self, i):
         file_name = super().get(i)
-        audio = AudioItem.open(file_name)
-        # noise_reduce
-        audio.preprocess(self.config)
+        audio = AudioItem(path=file_name, config=self.config)
+
+        # audio.preprocess(self.config)
         if self.config.use_spectro:
-            audio.register_spectro(self.config)
+            audio.register_spectro()
         return audio
 
     def reconstruct(self, x, **kwargs): return x

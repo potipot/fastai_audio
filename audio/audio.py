@@ -20,11 +20,12 @@ AUDIO_EXTENSIONS = tuple(str.lower(k) for k, v in mimetypes.types_map.items() if
 
 
 class AudioItem(ItemBase):
-    def __init__(self, sig=None, sr=None, path=None, spectro=None, max_to_pad=None, start=None, end=None, loudness=None):
+    def __init__(self, sig=None, sr=None, path=None, spectro=None, max_to_pad=None, start=None, end=None, loudness=None, config=None):
         """Holds Audio signal and/or spectrogram data"""
         if isinstance(sig, np.ndarray): sig = torch.from_numpy(sig)
         self._sig, self._sr, self.path, self.spectro = sig, sr, path, spectro
         self._loudness = loudness
+        self.config = config
         self.max_to_pad = max_to_pad
         self.start, self.end = start, end
 
@@ -34,20 +35,11 @@ class AudioItem(ItemBase):
         elif isinstance(func, str):
             return getattr(self, func)(**kwargs)
 
-    def preprocess(self, config:AudioConfig):
-        """Apply raw waveform preprocessing: loudnorm and noise reduction"""
-        # noise removing
-        if config.silence_threshold:
-            self._reduce_noise(config.silence_threshold)
-        # loudness correcting part
-        if config.target_loudness: self._set_loudness(config.target_loudness, clipping_method='soft_smart')
-        return self
-
-    @classmethod
-    def open(cls, path:Path):
-        sig, sr = torchaudio.load(path)
-        this = cls(sig, sr, path)
-        return this
+    # @classmethod
+    # def open(cls, path:Path):
+    #     sig, sr = torchaudio.load(path)
+    #     this = cls(sig, sr, path)
+    #     return this
 
     def validate_consistencies(self, config):
         if (config._sr is not None) and (self.sr != config._sr):
@@ -61,16 +53,16 @@ class AudioItem(ItemBase):
                                 not contain different number of channels. Please set downmix=true in AudioConfig or 
                                 separate files with different number of channels.''')
 
-    def register_spectro(self, config:AudioConfig):
+    def register_spectro(self):
         if self.path is None: raise ValueError("item path wasn't provided")
-        cache_path = config.get_cache_path(self.path)
-        self.validate_consistencies(config)
+        cache_path = self.config.get_cache_path(self.path)
         if cache_path.exists():
             spectro = torch.load(cache_path)
         else:
-            spectro = self.create_spectro(config)
-            if config.cache:
-                config.save_in_cache(self.path, spectro)
+            self.validate_consistencies(self.config)
+            spectro = self.create_spectro(self.config)
+            if self.config.cache:
+                self.config.save_in_cache(self.path, spectro)
         self.spectro = spectro
 
     def create_spectro(self, config):
@@ -99,9 +91,10 @@ class AudioItem(ItemBase):
         librosa.display.waveplot(self.sig.squeeze().numpy(), sr=self.sr)
         return f'{self.__repr__()}<br />{self.ipy_audio._repr_html_()}'
 
-    def clone(self): return AudioItem(spectro=self.spectro, path=self.path, sr=self.sr, sig=self.sig, loudness=self.loudness)
+    def clone(self): return AudioItem(spectro=self.spectro, path=self.path, sr=self.sr, sig=self.sig,
+                                      loudness=self.loudness, config=self.config)
 
-    def reconstruct(self, t): return(AudioItem(spectro=t))
+    def reconstruct(self, t): return AudioItem(spectro=t)
 
     def show(self, title: [str] = None, **kwargs):
         print(f"File: {self.path}")
@@ -129,12 +122,14 @@ class AudioItem(ItemBase):
         if sg is None: return []
         return [Image(s.unsqueeze(0)) for s in sg]
 
-    def _evaluate_loudness(self, signal, sr):
-        if (signal is not None) and (sr is not None):
-            loudness = src.loudnorm.get_loudness(signal, sr)
-        else:
-            loudness = None
-        return loudness
+    def _preprocess(self):
+        """Apply raw waveform preprocessing: loudnorm and noise reduction"""
+        # noise removing
+        if self.config.silence_threshold:
+            self._reduce_noise(self.config.silence_threshold)
+        # loudness correcting part
+        if self.config.target_loudness: self._set_loudness(self.config.target_loudness, clipping_method='soft_smart')
+        return self
 
     def _reduce_noise(self, silence_threshold: int = 30):
         """a function that cuts the leading and trailing noise from audio signal and uses it as a sample for noise
@@ -149,6 +144,13 @@ class AudioItem(ItemBase):
             reduced_noise = nr.reduce_noise(audio_clip=sig, noise_clip=noise, verbose=False, prop_decrease=0.9)
             # reshape sig
             self.sig = torch.from_numpy(reduced_noise).view(1, -1)
+
+    def _evaluate_loudness(self, signal, sr):
+        if (signal is not None) and (sr is not None):
+            loudness = src.loudnorm.get_loudness(signal, sr)
+        else:
+            loudness = None
+        return loudness
 
     def _set_loudness(self, target_loudness, clipping_method:str = 'soft_smart', **kwargs):
         sig = _channel_first(self.sig)
@@ -223,10 +225,6 @@ class AudioItem(ItemBase):
         data_new = func(self.logit_px, **kwargs).sigmoid()
         return self
 
-    def _reload_signal(self):
-        raise RuntimeError("Shouldn't be reloading signal, what is the purpose?")
-        self._sig,self._sr = torchaudio.load(self.path)
-
     def save(self, output:Path=''):
         default_name = 'out'
         default_suffix = '.wav'
@@ -248,7 +246,8 @@ class AudioItem(ItemBase):
 
     @property
     def sig(self):
-        if self._sig is None: self._reload_signal()
+        if self._sig is None:
+            self._load_signal()
         return self._sig
 
     @sig.setter
@@ -256,13 +255,19 @@ class AudioItem(ItemBase):
         self._sig = sig
         self._loudness = self._evaluate_loudness(self.sig, self.sr)
 
+    def _load_signal(self):
+        # raise RuntimeError("Shouldn't be reloading signal, what is the purpose?")
+        self._sig, self._sr = torchaudio.load(self.path)
+        self._preprocess()
+
     @property
     def sr(self):
-        if self._sr is None: self._reload_signal()
+        if self._sr is None:
+            self._load_signal()
         return self._sr
 
     @sr.setter
-    def sr(self, sr): self._sr=sr
+    def sr(self, sr): self._sr = sr
 
     @property
     def data(self):

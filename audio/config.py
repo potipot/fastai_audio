@@ -69,7 +69,7 @@ class SpectrogramFuncs:
         self.to_db = AmplitudeToDB(top_db=sg_cfg.top_db)
 
 
-@dataclass(unsafe_hash=True)
+@dataclass
 class AudioConfig:
     '''Options for pre-processing audio signals'''
     cache: bool = True
@@ -99,12 +99,12 @@ class AudioConfig:
     sg_cfg: SpectrogramConfig = SpectrogramConfig()
     _sg_funcs: SpectrogramFuncs = field(repr=False, compare=False, default=None)
 
-    def __setattr__(self, name, value):
-        '''Override to warn user if they are mixing seconds and ms'''
-        if name in 'duration max_to_pad segment_size'.split():
-            if value is not None and value <= 30:
-                warnings.warn(f"{name} should be in milliseconds, it looks like you might be trying to use seconds")
-        self.__dict__[name] = value
+    # def __setattr__(self, name, value):
+    #     '''Override to warn user if they are mixing seconds and ms'''
+    #     if name in 'duration max_to_pad segment_size'.split():
+    #         if value is not None and value <= 30:
+    #             warnings.warn(f"{name} should be in milliseconds, it looks like you might be trying to use seconds")
+    #     self.__dict__[name] = value
 
     @property
     def sg_funcs(self):
@@ -165,7 +165,7 @@ class AudioConfig:
 
     def get_cache_path(self, fn:Path):
         # folder = md5(str(asdict(self))+str(asdict(self.sg_cfg)))
-        folder = md5(hash(self))
+        folder = md5(self.__repr__())
         fname = f"{md5(fn)}-{fn.name}.pt"
         return Path(self.cache_dir/(f"{folder}/{fname}"))
 
