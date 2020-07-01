@@ -212,12 +212,7 @@ class AudioList(ItemList):
 
     def get(self, i):
         file_name = super().get(i)
-        audio = AudioItem(path=file_name, config=self.config)
-
-        # audio.preprocess(self.config)
-        if self.config.use_spectro:
-            audio.register_spectro()
-        return audio
+        return AudioItem(path=file_name, config=self.config)
 
     def reconstruct(self, x, **kwargs): return x
 

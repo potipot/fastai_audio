@@ -23,11 +23,12 @@ class AudioItem(ItemBase):
     def __init__(self, sig=None, sr=None, path=None, spectro=None, max_to_pad=None, start=None, end=None, loudness=None, config=None):
         """Holds Audio signal and/or spectrogram data"""
         if isinstance(sig, np.ndarray): sig = torch.from_numpy(sig)
-        self._sig, self._sr, self.path, self.spectro = sig, sr, path, spectro
+        self._sig, self._sr, self.path, self._spectro = sig, sr, path, spectro
         self._loudness = loudness
         self.config = config
         self.max_to_pad = max_to_pad
         self.start, self.end = start, end
+        self.is_preprocessed = False
 
     def calc(self, func, kwargs):
         if func is Callable:
@@ -53,31 +54,19 @@ class AudioItem(ItemBase):
                                 not contain different number of channels. Please set downmix=true in AudioConfig or 
                                 separate files with different number of channels.''')
 
-    def register_spectro(self):
-        if self.path is None: raise ValueError("item path wasn't provided")
-        cache_path = self.config.get_cache_path(self.path)
-        if cache_path.exists():
-            spectro = torch.load(cache_path)
+    def _create_spectro(self):
+        if self.config.mfcc:
+            spec = self.config.sg_funcs.mfcc(self.sig)
         else:
-            self.validate_consistencies(self.config)
-            spectro = self.create_spectro(self.config)
-            if self.config.cache:
-                self.config.save_in_cache(self.path, spectro)
-        self.spectro = spectro
-
-    def create_spectro(self, config):
-        if config.mfcc:
-            spec = config.sg_funcs.mfcc(self.sig)
-        else:
-            spec = config.sg_funcs.spec(self.sig)
-            spec = config.sg_funcs.to_mel(spec)
-            if config.sg_cfg.to_db_scale:
-                spec = config.sg_funcs.to_db(spec)
+            spec = self.config.sg_funcs.spec(self.sig)
+            spec = self.config.sg_funcs.to_mel(spec)
+            if self.config.sg_cfg.to_db_scale:
+                spec = self.config.sg_funcs.to_db(spec)
         spec = spec.detach()
-        if config.standardize:
+        if self.config.standardize:
             raise NotImplementedError
             spec = standardize(spec)
-        if config.delta:
+        if self.config.delta:
             raise NotImplementedError
             spec = torch.cat([torch.stack([m,torchdelta(m),torchdelta(m, order=2)]) for m in spec])
         return spec
@@ -91,8 +80,10 @@ class AudioItem(ItemBase):
         librosa.display.waveplot(self.sig.squeeze().numpy(), sr=self.sr)
         return f'{self.__repr__()}<br />{self.ipy_audio._repr_html_()}'
 
-    def clone(self): return AudioItem(spectro=self.spectro, path=self.path, sr=self.sr, sig=self.sig,
-                                      loudness=self.loudness, config=self.config)
+    def clone(self):
+        # the following causes an incomplete spectro to be loaded without sr and signal loaded (just data from cache)
+        return AudioItem(spectro=self.spectro, path=self.path, config=self.config)
+        # return AudioItem(spectro=self.spectro, path=self.path, sr=self.sr, sig=self.sig, loudness=self.loudness, config=self.config)
 
     def reconstruct(self, t): return AudioItem(spectro=t)
 
@@ -124,11 +115,14 @@ class AudioItem(ItemBase):
 
     def _preprocess(self):
         """Apply raw waveform preprocessing: loudnorm and noise reduction"""
-        # noise removing
-        if self.config.silence_threshold:
-            self._reduce_noise(self.config.silence_threshold)
-        # loudness correcting part
-        if self.config.target_loudness: self._set_loudness(self.config.target_loudness, clipping_method='soft_smart')
+        self.is_preprocessed = True
+        if self.config is not None:
+            # noise removing
+            if self.config.silence_threshold:
+                self._reduce_noise(self.config.silence_threshold)
+            # loudness correcting part
+            if self.config.target_loudness:
+                self._set_loudness(self.config.target_loudness, clipping_method='soft_smart')
         return self
 
     def _reduce_noise(self, silence_threshold: int = 30):
@@ -238,6 +232,21 @@ class AudioItem(ItemBase):
                 output = Path.cwd().with_name(output.as_posix())
         torchaudio.save(output.as_posix(), src=self.sig, sample_rate=self.sr)
 
+    def _load_signal(self):
+        self._sig, self._sr = torchaudio.load(self.path)
+
+    def _load_spectro(self):
+        if self.path is None: raise ValueError("item path wasn't provided")
+        cache_path = self.config.get_cache_path(self.path)
+        if cache_path.exists():
+            spectro = torch.load(cache_path)
+        else:
+            self.validate_consistencies(self.config)
+            spectro = self._create_spectro()
+            if self.config.cache:
+                self.config.save_in_cache(self.path, spectro)
+        self.spectro = spectro
+
     @property
     def loudness(self):
         if self._loudness is None:
@@ -245,20 +254,23 @@ class AudioItem(ItemBase):
         return self._loudness
 
     @property
+    def sig_raw(self):
+        """Raw signal w/o preprocessing on optional loading"""
+        if self._sig is None: self._load_signal()
+        return self._sig
+
+    @property
     def sig(self):
+        """The default signal accessing method. Uses preprocessing."""
         if self._sig is None:
             self._load_signal()
+        if not self.is_preprocessed: self._preprocess()
         return self._sig
 
     @sig.setter
     def sig(self, sig):
         self._sig = sig
         self._loudness = self._evaluate_loudness(self.sig, self.sr)
-
-    def _load_signal(self):
-        # raise RuntimeError("Shouldn't be reloading signal, what is the purpose?")
-        self._sig, self._sr = torchaudio.load(self.path)
-        self._preprocess()
 
     @property
     def sr(self):
@@ -268,6 +280,14 @@ class AudioItem(ItemBase):
 
     @sr.setter
     def sr(self, sr): self._sr = sr
+
+    @property
+    def spectro(self):
+        if self._spectro is None: self._load_spectro()
+        return self._spectro
+
+    @spectro.setter
+    def spectro(self, x): self._spectro = x
 
     @property
     def data(self):
@@ -290,16 +310,16 @@ class AudioItem(ItemBase):
 
     @property
     def duration(self): 
-        if(self.sig is not None): return self.nsamples/self.sr
+        if self.sig_raw is not None: return self.nsamples/self.sr
         else: 
             si, ei = torchaudio.info(str(self.path))
             return si.length/si.rate
     
     @property
     def nsamples(self):
-        return self.sig.shape[-1]
+        return self.sig_raw.shape[-1]
 
     @property
     def nchannels(self):
-        return self.sig.shape[-2]
+        return self.sig_raw.shape[-2]
 
