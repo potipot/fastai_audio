@@ -36,12 +36,6 @@ class AudioItem(ItemBase):
         elif isinstance(func, str):
             return getattr(self, func)(**kwargs)
 
-    # @classmethod
-    # def open(cls, path:Path):
-    #     sig, sr = torchaudio.load(path)
-    #     this = cls(sig, sr, path)
-    #     return this
-
     def validate_consistencies(self, config):
         if (config._sr is not None) and (self.sr != config._sr):
             raise ValueError(f'''Multiple sample rates detected. Sample rate {self.sr} of file {self.path} 
@@ -191,8 +185,6 @@ class AudioItem(ItemBase):
                 tfm.resolve()
         x = self.clone()
         for tfm in tfms:
-            # Reset this attribute, otherwise it treats our object as Image instance looking for px and flow fields
-            # setattr(tfm.tfm, '_wrap', None)
             if tfm in size_tfms:
                 # setattr(tfm.tfm, '_wrap', None)
                 crop_target = x._get_duration_crop_target(duration)
