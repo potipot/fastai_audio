@@ -66,7 +66,7 @@ class AudioItem(ItemBase):
         return spec
 
     def __repr__(self):
-        return f'{self.__class__.__name__} {round(self.duration, 2)} s ({self.nchannels} ch, {self.loudness:.2f} LUFS, {self.nsamples} samples @ {self.sr} Hz)'
+        return f'{self.__class__.__name__} {round(self.duration, 2)} s ({self.nchannels} ch, {self.loudness:.2f} LUFS, {self.n_samples} samples @ {self.sr} Hz)'
 
     def __len__(self): return self.data.shape[0]
 
@@ -97,7 +97,7 @@ class AudioItem(ItemBase):
         if self.start is not None or self.end is not None:
             print(f"{round(self.start/self.sr, 2)}s-{round(self.end/self.sr,2)}s of original clip")
             start = 0 if self.start is None else self.start
-            end = self.nsamples-1 if self.end is None else self.end
+            end = self.n_samples - 1 if self.end is None else self.end
             display(Audio(data=self.sig[:,start:end], rate=self.sr))
         else:
             display(self.ipy_audio)
@@ -160,11 +160,11 @@ class AudioItem(ItemBase):
 
     def _get_duration_crop_target(self, duration):
         *_, features, time_bins = self.data.shape
-        # this works for both modes: fourier bins and waveform
+        # this is probably broken and works only for spectro, not waveform
         if hasattr(self, 'hl'):
             hl = self.hl
         else:
-            hl = math.ceil(self.nsamples / time_bins)
+            hl = math.ceil(self.n_samples / time_bins)
         bins = round(duration/1000 * self.sr / hl)
         return features, bins
 
@@ -186,12 +186,13 @@ class AudioItem(ItemBase):
         x = self.clone()
         for tfm in tfms:
             if tfm in size_tfms:
-                # setattr(tfm.tfm, '_wrap', None)
-                crop_target = x._get_duration_crop_target(duration)
+                crop_target = self._get_duration_crop_target(duration)
                 x = tfm(x, size=crop_target, padding_mode=padding_mode)
             else:
                 x = tfm(x)
+        # below is the resizing part, `separate from cropping`
         if size is not None:
+            # read target size from size dictionary, passed to transform method, default to own length (no resize)
             sz = size.get(getattr(self.__class__, '__name__'), x.shape[-1])
             x.resize(sz)
         return x
@@ -302,13 +303,13 @@ class AudioItem(ItemBase):
 
     @property
     def duration(self): 
-        if self.sig_raw is not None: return self.nsamples/self.sr
+        if self.sig_raw is not None: return self.n_samples / self.sr
         else: 
             si, ei = torchaudio.info(str(self.path))
             return si.length/si.rate
     
     @property
-    def nsamples(self):
+    def n_samples(self):
         return self.sig_raw.shape[-1]
 
     @property
