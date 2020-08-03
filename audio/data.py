@@ -6,8 +6,7 @@ import matplotlib as plt
 from fastai.vision import *
 from fastprogress.fastprogress import progress_bar
 import torchaudio
-import loudnorm
-import utils
+from .utils import sequences, get_file_info
 
 
 class EmptyFileException(Exception):
@@ -16,7 +15,7 @@ class EmptyFileException(Exception):
 
 class AudioDataBunch(DataBunch):
     def show_batch_stats(self, include_edges=False):
-        lens = np.concatenate([utils.sequences(batch, include_edges=include_edges, ignore_values=self.c2i['sil']) for _, y in self.train_dl for batch in y])
+        lens = np.concatenate([sequences(batch, include_edges=include_edges, ignore_values=self.c2i['sil']) for _, y in self.train_dl for batch in y])
         fig, ax = plt.subplots(1)
 
         ax.hist(lens, bins=lens.max().astype('int'))
@@ -105,7 +104,7 @@ def _set_nchannels(item_path, config, path):
         raise TypeError
         item_path = item_path.path
     if not os.path.exists(item_path): item_path = path/item_path
-    info = loudnorm.get_file_info(item_path)
+    info = get_file_info(item_path)
     config._nchannels = info.channels
 
 

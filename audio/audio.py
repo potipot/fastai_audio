@@ -9,12 +9,13 @@ from fastai.vision import Image, listify, TfmCrop, FlowField, ItemBase, ifnone
 import numpy as np
 import math
 import torch
-import src.loudnorm
+
 import noisereduce as nr
 import librosa.display
 
 from .config import AudioConfig
-from src.utils import _channel_first, _signal_first
+from .loudnorm import get_loudness, volume, clip
+from .utils import _channel_first, _signal_first
 
 AUDIO_EXTENSIONS = tuple(str.lower(k) for k, v in mimetypes.types_map.items() if v.startswith('audio/'))
 
@@ -135,7 +136,7 @@ class AudioItem(ItemBase):
 
     def _evaluate_loudness(self, signal, sr):
         if (signal is not None) and (sr is not None):
-            loudness = src.loudnorm.get_loudness(signal, sr)
+            loudness = get_loudness(signal, sr)
         else:
             loudness = None
         return loudness
@@ -143,8 +144,8 @@ class AudioItem(ItemBase):
     def _set_loudness(self, target_loudness, clipping_method:str = 'soft_smart', **kwargs):
         sig = _channel_first(self.sig)
         input_loudness = self.loudness
-        output = src.loudnorm.volume(sig, input_loudness, target_loudness)
-        output = src.loudnorm.clip(clipping_method, output, **kwargs)
+        output = volume(sig, input_loudness, target_loudness)
+        output = clip(clipping_method, output, **kwargs)
         self.sig = _signal_first(output)
         if (diff:=abs(self.loudness-target_loudness))>0.5:
             warnings.warn(f'Target loudness not reached due to clipping, {diff=:.2f} LUFS')
