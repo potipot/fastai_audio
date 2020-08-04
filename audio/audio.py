@@ -123,16 +123,17 @@ class AudioItem(ItemBase):
     def _reduce_noise(self, silence_threshold: int = 30):
         """a function that cuts the leading and trailing noise from audio signal and uses it as a sample for noise
         reducing algorithm. Original waveform is being replaced. *db* is used as the difference between signal and noise"""
-        new_sig, (trim_left, trim_right) = librosa.effects.trim(self.sig, top_db=silence_threshold)
+        _, (trim_left, trim_right) = librosa.effects.trim(self.sig.squeeze(), top_db=silence_threshold)
         noise = torch.cat((self.sig[:, :trim_left], self.sig[:, trim_right:]), dim=1)
 
-        if noise.numel():
+        if noise.numel() > (n_fft := 1024):
             # noise is not empty, otherwise cannot perform analysis
             sig = self.sig.squeeze().numpy()
             noise = noise.squeeze().numpy()
-            reduced_noise = nr.reduce_noise(audio_clip=sig, noise_clip=noise, verbose=False, prop_decrease=0.9)
+            reduced_noise = nr.reduce_noise(n_fft=n_fft, win_length=n_fft, audio_clip=sig, noise_clip=noise,
+                                            verbose=False, prop_decrease=0.9)
             # reshape sig
-            self.sig = torch.from_numpy(reduced_noise).view(1, -1)
+            self.sig = torch.from_numpy(reduced_noise.astype(np.float32)).view(1, -1)
 
     def _evaluate_loudness(self, signal, sr):
         if (signal is not None) and (sr is not None):
