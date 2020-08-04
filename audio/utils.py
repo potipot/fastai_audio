@@ -35,12 +35,21 @@ def one_hot_ndarray(signal, n_classes):
     return res
 
 
-def one_hot_decode(tens:torch.Tensor, axis=-2):
+def one_hot_decode(tens:torch.Tensor, axis=-2, dummy_value=None):
+    """A function that converts a one-hot encoded tensor into an array pointing to the indice with maximum value in each
+    axis. Reverse to one hot encoding.
+    @axis indicates the axis that was unrolled to produce one-hot encoding. By default its one-before-the-last axis.
+    @dummy is used if the tensor is not properly one-hot-encoded, meaning that there isn't a single maximum value
+    alongside given axis. For a row where min=max (usually 0), the dummy value is used. By default it's tens.shape[axis]"""
     maxes, indices = torch.max(tens, dim=axis)
+    mins, mindices = torch.min(tens, dim=axis)
+    if dummy_value is None: dummy_value = tens.shape[axis]
+    indices[indices == mindices] = dummy_value
     # below tests if there is no equal items along chosen axis. Number of zeros in an array should equal number of maxes
     if len((tens - maxes.unsqueeze(axis)).nonzero()) != tens.numel()-maxes.numel():
-        warnings.warn('Tensor is not correctly one hot encoded, some max values repeat along chosen axis.')
-        # TODO: use softmax, add blank symbol
+        warnings.warn(f'Tensor is not correctly one hot encoded, some max values repeat along chosen axis. '
+                      f'Defaulting to {dummy_value}')
+        # TODO: use softmax
     return indices
 
 
@@ -56,7 +65,7 @@ def sequences(tens, include_edges=False, c2i: dict = None, return_counter=False,
     :param return_counter: """
     tens = tens.squeeze()
     if tens.ndim == 2:
-        tens = one_hot_decode(tens)
+        tens = one_hot_decode(tens, dummy_value=ignore_values)
     elif tens.ndim == 1:
         pass
     else:
