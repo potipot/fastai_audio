@@ -35,21 +35,24 @@ def one_hot_ndarray(signal, n_classes):
     return res
 
 
-def one_hot_decode(tens:torch.Tensor, axis=-2, dummy_value=None):
+def one_hot_decode(tens:torch.Tensor, axis=-2, default_value=None):
     """A function that converts a one-hot encoded tensor into an array pointing to the indice with maximum value in each
     axis. Reverse to one hot encoding.
     @axis indicates the axis that was unrolled to produce one-hot encoding. By default its one-before-the-last axis.
-    @dummy is used if the tensor is not properly one-hot-encoded, meaning that there isn't a single maximum value
-    alongside given axis. For a row where min=max (usually 0), the dummy value is used. By default it's tens.shape[axis]"""
+    @default_value is used if the tensor is not properly one-hot-encoded, meaning that there isn't a single maximum value
+    alongside given axis. By default it's tens.shape[axis]"""
     maxes, indices = torch.max(tens, dim=axis)
-    mins, mindices = torch.min(tens, dim=axis)
-    if dummy_value is None: dummy_value = tens.shape[axis]
-    indices[indices == mindices] = dummy_value
-    # below tests if there is no equal items along chosen axis. Number of zeros in an array should equal number of maxes
-    if len((tens - maxes.unsqueeze(axis)).nonzero()) != tens.numel()-maxes.numel():
+    # mins, mindices = torch.min(tens, dim=axis)
+    if default_value is None: default_value = tens.shape[axis]
+    # how many times maxvalue appears along given row
+    maxval_repetitions = (tens >= maxes).sum(dim=axis)
+    if (mask := maxval_repetitions > 1).any():
         warnings.warn(f'Tensor is not correctly one hot encoded, some max values repeat along chosen axis. '
-                      f'Defaulting to {dummy_value}')
-        # TODO: use softmax
+                      f'Defaulting to {default_value}')
+        indices.masked_fill_(mask, default_value)
+    # below tests if there is no equal items along chosen axis. Number of zeros in an array should equal number of maxes
+    # if len((tens - maxes.unsqueeze(axis)).nonzero()) != tens.numel()-maxes.numel():
+    #     pass
     return indices
 
 
@@ -65,7 +68,7 @@ def sequences(tens, include_edges=False, c2i: dict = None, return_counter=False,
     :param return_counter: """
     tens = tens.squeeze()
     if tens.ndim == 2:
-        tens = one_hot_decode(tens, dummy_value=ignore_values)
+        tens = one_hot_decode(tens, default_value=ignore_values)
     elif tens.ndim == 1:
         pass
     else:
