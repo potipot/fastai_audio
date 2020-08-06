@@ -57,7 +57,8 @@ def one_hot_decode(tens:torch.Tensor, axis=-2, default_value=None):
 
 
 def one_hot_tensor(signal, n_classes):
-    res = torch.zeros(size=(n_classes, signal.numel()), dtype=torch.float)
+    assert(signal.ndim<4), 'Tensor shape not supported'
+    res = torch.zeros(size=(n_classes, signal.numel()), dtype=torch.float, device=signal.device)
     res.scatter_(0, signal.view(1,-1).long(), 1.0)
     return res
 

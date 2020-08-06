@@ -162,6 +162,9 @@ class AudioItem(ItemBase):
 
     def _get_duration_crop_target(self, duration):
         *_, features, time_bins = self.data.shape
+        # except ValueError:
+        #     features, time_bins = 1, self.data.shape
+
         # this is probably broken and works only for spectro, not waveform
         if hasattr(self, 'hl'):
             hl = self.hl
@@ -173,9 +176,13 @@ class AudioItem(ItemBase):
     def resize(self, size, interp_mode="bilinear"):
         """Temporary fix to allow image resizing transform"""
         data = self.data.unsqueeze(0)
+        # if data is integer we need to wrap it in float and remember the original type
+        source_dtype = data.dtype
+        if convert_types := not data.is_floating_point(): data = data.float()
         size_target = self._get_resize_target(size)
         align_corners = None if interp_mode=='nearest' else False
         data_new = torch.nn.functional.interpolate(data, size=size_target, mode=interp_mode, align_corners=align_corners)
+        if convert_types: data_new = data_new.to(dtype=source_dtype)
         self.data = data_new.squeeze(0)
         self.sr = self.sr*data_new.shape[-1]/data.shape[-1]
 
