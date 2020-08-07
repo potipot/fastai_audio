@@ -202,8 +202,10 @@ class AudioItem(ItemBase):
         # below is the resizing part, `separate from cropping`
         if size is not None:
             # read target size from size dictionary, passed to transform method, default to own length (no resize)
-            sz = size.get(getattr(self.__class__, '__name__'), x.shape[-1])
-            x.resize(sz)
+            orig_size = x.shape[-1]
+            new_size = size.get(getattr(self.__class__, '__name__'), orig_size)
+            x.resize(new_size)
+            # if x.config is not None: x.config._sr *= new_size/orig_size
         return x
 
     def pixel(self, func, **kwargs):
