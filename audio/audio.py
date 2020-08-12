@@ -162,15 +162,16 @@ class AudioItem(ItemBase):
 
     def _get_duration_crop_target(self, duration):
         *_, features, time_bins = self.data.shape
-        # except ValueError:
-        #     features, time_bins = 1, self.data.shape
-
         # this is probably broken and works only for spectro, not waveform
         if hasattr(self, 'hl'):
             hl = self.hl
         else:
             hl = math.ceil(self.n_samples / time_bins)
-        bins = round(duration/1000 * self.sr / hl)
+
+        if duration is not None:
+            bins = round(duration / 1000 * self.sr / hl)
+        else:
+            bins = time_bins
         return features, bins
 
     def resize(self, size, interp_mode="bilinear"):
