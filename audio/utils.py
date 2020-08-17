@@ -41,6 +41,7 @@ def one_hot_decode(tens:torch.Tensor, axis=-2, default_value=0):
     @axis indicates the axis that was unrolled to produce one-hot encoding. By default its one-before-the-last axis.
     @default_value is used if the tensor is not properly one-hot-encoded, meaning that there isn't a single maximum value
     alongside given axis. By default it's tens.shape[axis]"""
+    # TODO check this for whole batch
     maxes, indices = torch.max(tens, dim=axis)
     # mins, mindices = torch.min(tens, dim=axis)
     # how many times maxvalue appears along given row

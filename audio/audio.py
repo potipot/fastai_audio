@@ -30,6 +30,7 @@ class AudioItem(ItemBase):
         self.max_to_pad = max_to_pad
         self.start, self.end = start, end
         self.is_preprocessed = False
+        self.reconstruct_signal = False
 
     def calc(self, func, kwargs):
         if func is Callable:
@@ -78,12 +79,13 @@ class AudioItem(ItemBase):
     def clone(self):
         # the following causes an incomplete spectro to be loaded without sr and signal loaded (just data from cache)
         return AudioItem(spectro=self.spectro, path=self.path, config=self.config)
-        # return AudioItem(spectro=self.spectro, path=self.path, sr=self.sr, sig=self.sig, loudness=self.loudness, config=self.config)
 
     def reconstruct(self, t): return AudioItem(spectro=t)
 
-    def show(self, title: [str] = None, **kwargs):
-        print(f"File: {self.path}")
+    def show(self, title: [str] = None, reconstruct_signal=True, **kwargs):
+        if self.path is not None: print(f"File path: {self.path}")
+        self.reconstruct_signal = reconstruct_signal
+
         print(f"Total Length: {round(self.duration, 2)} seconds")
         print(f"Number of Channels: {self.nchannels}")
         images_per_channel = len(self.get_spec_images())/self.nchannels
@@ -94,7 +96,6 @@ class AudioItem(ItemBase):
 
     def hear(self, title=None):
         if title is not None: print("Label:", title)
-        if self.sig is None: self._check_signal()
         if self.start is not None or self.end is not None:
             print(f"{round(self.start/self.sr, 2)}s-{round(self.end/self.sr,2)}s of original clip")
             start = 0 if self.start is None else self.start
@@ -237,8 +238,12 @@ class AudioItem(ItemBase):
                 output = Path.cwd().with_name(output.as_posix())
         torchaudio.save(output.as_posix(), src=self.sig, sample_rate=self.sr)
 
-    def _load_signal(self):
-        self._sig, self._sr = torchaudio.load(self.path)
+    def _get_signal(self):
+        if self.path is not None:
+            self.sig, self._sr = torchaudio.load(self.path)
+        elif self.spectro is not None and self.reconstruct_signal:
+            # no signal or path but spectro is defined
+            self.sig = self.config.mel2sig(self.spectro)
 
     def _load_spectro(self):
         if self.path is None: raise ValueError("item path wasn't provided")
@@ -261,26 +266,27 @@ class AudioItem(ItemBase):
     @property
     def sig_raw(self):
         """Raw signal w/o preprocessing on optional loading"""
-        if self._sig is None: self._load_signal()
+        if self._sig is None: self._get_signal()
         return self._sig
 
     @property
     def sig(self):
         """The default signal accessing method. Uses preprocessing."""
         if self._sig is None:
-            self._load_signal()
-        if not self.is_preprocessed: self._preprocess()
+            self._get_signal()
+        if self._sig is not None and not self.is_preprocessed: self._preprocess()
         return self._sig
 
     @sig.setter
     def sig(self, sig):
         self._sig = sig
-        self._loudness = self._evaluate_loudness(self.sig, self.sr)
+        self._loudness = None
+        # self._loudness = self._evaluate_loudness(self.sig, self.sr)
 
     @property
     def sr(self):
         if self._sr is None:
-            self._load_signal()
+            self._get_signal()
         return self._sr
 
     @sr.setter
@@ -310,16 +316,15 @@ class AudioItem(ItemBase):
 
     @property
     def ipy_audio(self): 
-        if self.sig is None: self._check_signal()
         return Audio(data=self.sig.squeeze().numpy(), rate=self.sr)
 
     @property
-    def duration(self): 
-        if self.sig_raw is not None: return self.n_samples / self.sr
-        else: 
-            si, ei = torchaudio.info(str(self.path))
-            return si.length/si.rate
-    
+    def duration(self):
+        if self.sig is not None:
+            return self.n_samples / self.sr
+        elif self.spectro is not None:
+            return (self.spectro.shape[-1] * self.config.sg_cfg.hop_length) / self.sr
+
     @property
     def n_samples(self):
         return self.sig_raw.shape[-1]

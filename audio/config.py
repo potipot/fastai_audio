@@ -59,6 +59,14 @@ class SpectrogramConfig:
     def spec_args(self):
         return {name: getattr(self, name) for name in ["hop_length", "n_fft", "pad", "win_length"]}
 
+    @property
+    def inverse_mel_args(self):
+        return {name: getattr(self, name) for name in ["n_stft", "n_mels", "f_min", "f_max"]}
+
+    @property
+    def griffin_lim_args(self):
+        return {name: getattr(self, name) for name in ["n_fft", "hop_length", "win_length"]}
+
 
 class SpectrogramFuncs:
     def __init__(self, sr: int, sg_cfg: SpectrogramConfig):
@@ -67,6 +75,18 @@ class SpectrogramFuncs:
         self.to_mel = MelScale(sample_rate=sr, **sg_cfg.mel_args)
         self.mfcc = MFCC(sample_rate=sr, **sg_cfg.mfcc_args)
         self.to_db = AmplitudeToDB(top_db=sg_cfg.top_db)
+
+
+class ReconstructSignal:
+    def __init__(self, sr: int, sg_cfg: SpectrogramConfig):
+        self.sg_cfg = sg_cfg
+        self.mel2sig = torch.nn.Sequential(
+                torchaudio.transforms.InverseMelScale(sample_rate=sr, **sg_cfg.inverse_mel_args),
+                torchaudio.transforms.GriffinLim(**sg_cfg.griffin_lim_args)
+            )
+
+    def __call__(self, *args, **kwargs):
+        return self.mel2sig(*args, **kwargs)
 
 
 @dataclass
@@ -98,6 +118,7 @@ class AudioConfig:
 
     sg_cfg: SpectrogramConfig = SpectrogramConfig()
     _sg_funcs: SpectrogramFuncs = field(repr=False, compare=False, default=None)
+    _mel2sig: ReconstructSignal = field(repr=False, compare=False, default=None)
 
     # def __setattr__(self, name, value):
     #     '''Override to warn user if they are mixing seconds and ms'''
@@ -113,6 +134,14 @@ class AudioConfig:
         else:
             assert(self._sg_funcs.sg_cfg == self.sg_cfg)
         return self._sg_funcs
+
+    @property
+    def mel2sig(self):
+        if self._mel2sig is None:
+            self._mel2sig = ReconstructSignal(self._sr, self.sg_cfg)
+        else:
+            assert(self._mel2sig.sg_cfg == self.sg_cfg)
+        return self._mel2sig
 
     def clear_cache(self):
         '''Delete the files and empty dirs in the cache folder'''
