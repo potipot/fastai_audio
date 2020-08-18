@@ -89,7 +89,7 @@ class AudioItem(ItemBase):
         print(f"Total Length: {round(self.duration, 2)} seconds")
         print(f"Number of Channels: {self.nchannels}")
         images_per_channel = len(self.get_spec_images())/self.nchannels
-        self.hear(title=title)
+        if self.reconstruct_signal: self.hear(title=title)
         for i,im in enumerate(self.get_spec_images()):
             print(f"Channel {int(i//images_per_channel)}.{int(i%images_per_channel)} ({im.shape[-2]}x{im.shape[-1]}):")
             display(im.rotate(180).flip_lr())
@@ -331,5 +331,11 @@ class AudioItem(ItemBase):
 
     @property
     def nchannels(self):
-        return self.sig_raw.shape[-2]
+        if self.sig_raw is not None:
+            return self.sig_raw.shape[-2]
+        elif self.spectro.ndim == 3:
+            return self.spectro.shape[-3]
+        else:
+            warnings.warn('Guessing channel number to be 1')
+            return 1
 
