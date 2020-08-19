@@ -35,7 +35,7 @@ def one_hot_ndarray(signal, n_classes):
     return res
 
 
-def one_hot_decode(tens:torch.Tensor, axis=-2, default_value=0):
+def one_hot_decode(tens:torch.Tensor, axis=-2, default_value=None):
     """A function that converts a one-hot encoded tensor into an array pointing to the indice with maximum value in each
     axis. Reverse to one hot encoding.
     @axis indicates the axis that was unrolled to produce one-hot encoding. By default its one-before-the-last axis.
@@ -49,7 +49,7 @@ def one_hot_decode(tens:torch.Tensor, axis=-2, default_value=0):
     if (mask := maxval_repetitions > 1).any():
         warnings.warn(f'Tensor is not correctly one hot encoded, some max values repeat along chosen axis. '
                       f'Defaulting to {default_value}')
-        indices.masked_fill_(mask, default_value)
+        if default_value is not None: indices.masked_fill_(mask, default_value)
     # below tests if there is no equal items along chosen axis. Number of zeros in an array should equal number of maxes
     # if len((tens - maxes.unsqueeze(axis)).nonzero()) != tens.numel()-maxes.numel():
     #     pass
