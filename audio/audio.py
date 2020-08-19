@@ -89,13 +89,14 @@ class AudioItem(ItemBase):
         print(f"Total Length: {round(self.duration, 2)} seconds")
         print(f"Number of Channels: {self.nchannels}")
         images_per_channel = len(self.get_spec_images())/self.nchannels
-        if self.reconstruct_signal: self.hear(title=title)
+        self.hear(title=title)
         for i,im in enumerate(self.get_spec_images()):
             print(f"Channel {int(i//images_per_channel)}.{int(i%images_per_channel)} ({im.shape[-2]}x{im.shape[-1]}):")
             display(im.rotate(180).flip_lr())
 
     def hear(self, title=None):
         if title is not None: print("Label:", title)
+        if not self.reconstruct_signal: return
         if self.start is not None or self.end is not None:
             print(f"{round(self.start/self.sr, 2)}s-{round(self.end/self.sr,2)}s of original clip")
             start = 0 if self.start is None else self.start
