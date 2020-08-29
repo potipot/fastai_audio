@@ -114,12 +114,21 @@ class AudioItem(ItemBase):
         """Apply raw waveform preprocessing: loudnorm and noise reduction"""
         self.is_preprocessed = True
         if self.config is not None:
+
+            # resampling
+            if target_sr := self.config.resample_to:
+                resampler = torchaudio.transforms.Resample(self.sr, target_sr)
+                self.sig = resampler(self.sig)
+                self.sr = target_sr
+
             # noise removing
             if self.config.silence_threshold:
                 self._reduce_noise(self.config.silence_threshold)
+
             # loudness correcting part
             if self.config.target_loudness:
                 self._set_loudness(self.config.target_loudness, clipping_method='soft_smart')
+
         return self
 
     def _reduce_noise(self, silence_threshold: int = 30):
@@ -252,7 +261,7 @@ class AudioItem(ItemBase):
         if cache_path.exists():
             spectro = torch.load(cache_path)
         else:
-            self.validate_consistencies(self.config)
+            # self.validate_consistencies(self.config)
             spectro = self._create_spectro()
             if self.config.cache:
                 self.config.save_in_cache(self.path, spectro)
