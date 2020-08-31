@@ -160,9 +160,9 @@ class AudioItem(ItemBase):
         output = clip(clipping_method, output, **kwargs)
         self.sig = _signal_first(output)
         if (diff:=abs(self.loudness-target_loudness))>0.5:
-            warnings.warn(f'Target loudness not reached due to clipping, {diff=:.2f} LUFS')
+            # warnings.warn(f'Target loudness not reached due to clipping, {diff=:.2f} LUFS')
             # recurrent execution until the output loudness is within acceptable tolerance
-            #self.set_loudness(target_loudness, clipping_method=clipping_method, **kwargs)
+            self._set_loudness(target_loudness, clipping_method=clipping_method, **kwargs)
         return self
 
     def _get_resize_target(self, size):
