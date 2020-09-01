@@ -332,6 +332,9 @@ class AudioItem(ItemBase):
     def duration(self):
         if self.sig is not None:
             return self.n_samples / self.sr
+        elif self.path is not None:
+            sig_info, _ = torchaudio.info(self.path)
+            return sig_info.length/sig_info.rate
         elif self.spectro is not None:
             return (self.spectro.shape[-1] * self.config.sg_cfg.hop_length) / self.sr
 
