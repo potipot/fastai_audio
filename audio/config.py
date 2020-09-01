@@ -110,7 +110,7 @@ class AudioConfig:
     resample_to: int = None
     target_loudness: float = -23.0
     standardize: bool = False
-    downmix: bool = False
+    downmix: bool = True
 
     _processed = False
     _sr = None
