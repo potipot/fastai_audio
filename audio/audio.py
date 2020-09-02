@@ -114,6 +114,9 @@ class AudioItem(ItemBase):
         """Apply raw waveform preprocessing: loudnorm and noise reduction"""
         self.is_preprocessed = True
         if self.config is not None:
+            # down mixing
+            if self.config.downmix:
+                self.sig = torch.mean(self.sig, dim=0, keepdim=True)
 
             # resampling
             if target_sr := self.config.resample_to:
