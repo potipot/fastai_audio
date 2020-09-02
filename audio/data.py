@@ -7,6 +7,7 @@ from fastai.vision import *
 from fastprogress.fastprogress import progress_bar
 import torchaudio
 from .utils import sequences, get_file_info
+from .datasets import Dataset
 
 
 class EmptyFileException(Exception):
@@ -23,6 +24,24 @@ class AudioDataBunch(DataBunch):
         ax.set_ylabel('No of counts')
         ax.set_xticks(np.arange(lens.max(), step=5))
         return lens
+
+    def add_test(self, dataset:Dataset, labels:Any=None, tfms=None, tfm_y=None)->None:
+        "Add the `items` as a test set. Pass along `label` otherwise label them with `EmptyLabel`."
+        items = get_files(dataset.directory, extensions=AUDIO_EXTENSIONS, recurse=True)
+        if labels is None: labels = dataset.labels
+        ll = self.label_list
+        vdl = self.valid_dl
+
+        test_ds = (self.train_ds.x.__class__
+                   .from_folder(dataset.directory, config=self.config)
+                   .split_none()
+                   .label_from_dict(dictionary=dataset.labels))
+
+        ll.test = ll.valid.new(x=test_ds.train.x, y=test_ds.train.y, tfms=vdl.tfms, tfm_y=tfm_y)
+        # self.label_list.add_test(items, label=label, tfms=tfms, tfm_y=tfm_y)
+        dl = DataLoader(ll.test, vdl.batch_size, shuffle=False, drop_last=False, num_workers=vdl.num_workers)
+        self.test_dl = DeviceDataLoader(dl, vdl.device, vdl.tfms, vdl.collate_fn)
+        return self
 
 
 def downmix_item(item, config, path):
@@ -234,10 +253,14 @@ class AudioList(ItemList):
         plt.show()
   
     @classmethod
-    def from_folder(cls, path:PathOrStr='.', extensions:Collection[str]=None, **kwargs)->ItemList:
+    def from_folder(cls, path:Union[Dataset,Path,str]='.', extensions:Collection[str]=None, include=None, **kwargs)->ItemList:
         "Get the list of files in `path` that have an audio suffix. `recurse` determines if we search subfolders."
+        # wrap to allow use of Dataset class explicitly
+        if isinstance(path, Dataset):
+            if include is None: include = path.sample
+            path = path.directory
         extensions = ifnone(extensions, AUDIO_EXTENSIONS)
-        return super().from_folder(path=path, extensions=extensions, **kwargs)
+        return super().from_folder(path=path, extensions=extensions, include=include, **kwargs)
         
         
     @classmethod
