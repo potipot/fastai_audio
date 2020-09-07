@@ -223,7 +223,7 @@ class AudioList(ItemList):
 
     def reconstruct(self, x, **kwargs): return x
 
-    def stats(self, prec=0, devs=3, figsize=(15,5)):
+    def stats(self, prec=0, devs=3, figsize=(15,5), log=True, bins=10):
         '''Displays samples, plots file lengths and returns outliers of the AudioList'''
         len_dict = {}
         rate_dict = {}
@@ -236,10 +236,11 @@ class AudioList(ItemList):
         rates = list(rate_dict.values())
         print("Sample Rates: ")
         for sr,count in Counter(rates).items(): print(f"{int(sr)}: {count} files")
-        self._plot_lengths(lens, prec, figsize)
+        plt.hist(lens, figsize=figsize, log=log, bins=bins)
+        # self._plot_lengths(lens=lens, prec=prec, figsize=figsize, log=log, bins=bins)
         return len_dict
     
-    def _plot_lengths(self, lens, prec, figsize):
+    def _plot_lengths(self, lens, prec, figsize, log=True, bins=10):
         '''Plots a list of file lengths displaying prec digits of precision'''
         rounded = [round(i, prec) for i in lens]
         rounded_count = Counter(rounded)
@@ -247,7 +248,7 @@ class AudioList(ItemList):
         labels = sorted(rounded_count.keys())
         values = [rounded_count[i] for i in labels]
         width = 1
-        plt.bar(labels, values, width)
+        plt.bar(labels, values, width, log=log, bins=bins)
         xticks = np.linspace(int(min(rounded)), int(max(rounded))+1, 10)
         plt.xticks(xticks)
         plt.show()
