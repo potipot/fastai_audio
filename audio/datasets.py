@@ -89,7 +89,7 @@ class IplaDataset(Dataset):
                    'Pierwsza miłość']
 
     def read_labels(self):
-        labels_df = pd.read_csv(self.directory / "klipy.csv", sep=';', encoding='windows-1250', names=['path', 'sentence'])
+        labels_df = pd.read_csv(self.directory / "klipy_normalized.csv", sep=';', encoding='windows-1250', names=['path', 'sentence'])
         # skip intro lines
         labels_df = labels_df[~labels_df['sentence'].str.lower().isin([line.lower() for line in self.intro_lines])]
         # get absolute path
