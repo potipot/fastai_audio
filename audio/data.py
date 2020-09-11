@@ -15,6 +15,49 @@ class EmptyFileException(Exception):
 
 
 class AudioDataBunch(DataBunch):
+    def show_stats(self, ds_type: DatasetType = DatasetType.Valid, figsize=(10,10), log=True, bins=50, return_values=False):
+        '''Displays samples, plots file lengths and returns outliers of the AudioList'''
+        dl = self.dl(ds_type)
+        pb = progress_bar(zip(dl.x, dl.y), len(dl.x))
+        pb.comment = f'Analyzing {ds_type}'
+        durations = []
+        tempos = []
+        rates = Counter()
+        for x, y in pb:
+            durations.append(x.duration)
+            rates.update([x.sr])
+            tempos.append(y.sig.shape[-1] / x.spectro.shape[-1])
+        durations = np.array(durations)
+        tempos = np.array(tempos)
+
+        print("Sample Rates: ")
+        for sr, count in rates.items(): print(f"{int(sr)}: {count} files")
+        fig, axs = plt.subplots(2, 1, figsize=figsize)
+        max_tempo = 0.25
+        min_duration = 1.0
+        max_duration = 15.0
+        axs[0].hist(tempos, bins=bins, log=log)
+        axs[0].axvline(max_tempo, color='r', alpha=0.5, label='max tempo')
+        axs[0].plot([], [], ' ', label=f'{len(tempos[tempos < max_tempo])} samples in range')
+        axs[0].plot([], [], ' ', label=f'{len(tempos[tempos >= max_tempo])} samples discarded')
+
+        axs[0].set_title('tempos')
+        axs[0].set_xlabel('char per frame')
+        axs[0].legend(loc='upper right')
+
+        axs[1].hist(durations, bins=bins, log=log)
+        axs[1].axvline(min_duration, color='y', alpha=1, label='min duration')
+        axs[1].axvline(max_duration, color='r', alpha=0.5, label='max duration')
+        n_samples_in_range = len(durations[(durations < max_duration) * (durations > min_duration)])
+        axs[1].plot([], [], ' ', label=f'{n_samples_in_range} samples in range')
+        axs[1].plot([], [], ' ', label=f'{len(durations) - n_samples_in_range} samples discarded')
+
+        axs[1].set_title('durations')
+        axs[1].set_xlabel('time [s]')
+        axs[1].legend(loc='upper right')
+        plt.tight_layout()
+        return tempos, durations if return_values else None
+
     def show_batch_stats(self, include_edges=False):
         lens = np.concatenate([sequences(batch, include_edges=include_edges, ignore_values=self.c2i['sil']) for _, y in self.train_dl for batch in y])
         fig, ax = plt.subplots(1)
@@ -24,24 +67,6 @@ class AudioDataBunch(DataBunch):
         ax.set_ylabel('No of counts')
         ax.set_xticks(np.arange(lens.max(), step=5))
         return lens
-
-    def add_test(self, dataset:Dataset, labels:Any=None, tfms=None, tfm_y=None)->None:
-        "Add the `items` as a test set. Pass along `label` otherwise label them with `EmptyLabel`."
-        items = get_files(dataset.directory, extensions=AUDIO_EXTENSIONS, recurse=True)
-        if labels is None: labels = dataset.labels
-        ll = self.label_list
-        vdl = self.valid_dl
-
-        test_ds = (self.train_ds.x.__class__
-                   .from_folder(dataset.directory, config=self.config)
-                   .split_none()
-                   .label_from_dict(dictionary=dataset.labels))
-
-        ll.test = ll.valid.new(x=test_ds.train.x, y=test_ds.train.y, tfms=vdl.tfms, tfm_y=tfm_y)
-        # self.label_list.add_test(items, label=label, tfms=tfms, tfm_y=tfm_y)
-        dl = DataLoader(ll.test, vdl.batch_size, shuffle=False, drop_last=False, num_workers=vdl.num_workers)
-        self.test_dl = DeviceDataLoader(dl, vdl.device, vdl.tfms, vdl.collate_fn)
-        return self
 
 
 def downmix_item(item, config, path):
@@ -222,23 +247,6 @@ class AudioList(ItemList):
         return AudioItem(path=file_name, config=self.config)
 
     def reconstruct(self, x, **kwargs): return x
-
-    def stats(self, prec=0, devs=3, figsize=(15,5), log=True, bins=10):
-        '''Displays samples, plots file lengths and returns outliers of the AudioList'''
-        len_dict = {}
-        rate_dict = {}
-        pb = progress_bar(self)
-        for item in pb:
-            si, ei = torchaudio.info(str(item.path))
-            len_dict[item.path] = si.length/si.rate
-            rate_dict[item.path] = si.rate
-        lens = list(len_dict.values())
-        rates = list(rate_dict.values())
-        print("Sample Rates: ")
-        for sr,count in Counter(rates).items(): print(f"{int(sr)}: {count} files")
-        plt.hist(lens, figsize=figsize, log=log, bins=bins)
-        # self._plot_lengths(lens=lens, prec=prec, figsize=figsize, log=log, bins=bins)
-        return len_dict
     
     def _plot_lengths(self, lens, prec, figsize, log=True, bins=10):
         '''Plots a list of file lengths displaying prec digits of precision'''

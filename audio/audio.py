@@ -299,7 +299,8 @@ class AudioItem(ItemBase):
     @property
     def sr(self):
         if self._sr is None:
-            self._get_signal()
+            # to load signal with preprocessing if needed
+            self.sig
         return self._sr
 
     @sr.setter
