@@ -130,3 +130,13 @@ class ClarinDataset(Dataset):
                 annotation = self.extract_string(json_file)
                 clarin_dict[wav_file.as_posix()] = annotation
         return clarin_dict
+
+
+class LunaDataset(Dataset):
+    name = 'luna'
+
+    def read_labels(self) -> dict:
+        read = pd.read_csv(self.directory/'labels.csv', names=['filepath', 'label'])
+        read['filepath'] = read['filepath'].apply(lambda path: (self.directory / path).as_posix())
+        return read.set_index('filepath')['label'].to_dict()
+
