@@ -21,7 +21,8 @@ AUDIO_EXTENSIONS = tuple(str.lower(k) for k, v in mimetypes.types_map.items() if
 
 
 class AudioItem(ItemBase):
-    def __init__(self, sig=None, sr=None, path=None, spectro=None, max_to_pad=None, start=None, end=None, loudness=None, config=None):
+    def __init__(self, sig=None, sr=None, path=None, spectro=None, max_to_pad=None, start=None, end=None, loudness=None,
+                 config:AudioConfig=None):
         """Holds Audio signal and/or spectrogram data"""
         if isinstance(sig, np.ndarray): sig = torch.from_numpy(sig)
         self._sig, self._sr, self.path, self._spectro = sig, sr, path, spectro
@@ -111,7 +112,7 @@ class AudioItem(ItemBase):
         return [Image(s.unsqueeze(0)) for s in sg]
 
     def _preprocess(self):
-        """Apply raw waveform preprocessing: loudnorm and noise reduction"""
+        """Apply raw waveform preprocessing: downmixing, resampling, pre-emphasis, noise removing and loudnorm."""
         self.is_preprocessed = True
         if self.config is not None:
             # down mixing
@@ -124,11 +125,18 @@ class AudioItem(ItemBase):
                 self.sig = resampler(self.sig)
                 self.sr = target_sr
 
+            # pre-emphasis
+            if k := self.config.pre_emphasis_coeff:
+                assert(self.sig.ndim == 2)
+                kernel = torch.tensor([k, 1, 0]).view(1, 1, 3)
+                self.sig = torch.nn.functional.conv1d(self.sig.unsqueeze(0), kernel).squeeze(0)
+                assert(self.sig.ndim == 2)
+
             # noise removing
             if self.config.silence_threshold:
                 self._reduce_noise(self.config.silence_threshold)
 
-            # loudness correcting part
+            # loudness normalization
             if self.config.target_loudness:
                 self._set_loudness(self.config.target_loudness, clipping_method='soft_smart')
 

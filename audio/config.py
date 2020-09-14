@@ -100,6 +100,7 @@ class AudioConfig:
     max_to_pad: float = None
     pad_mode: str = "zeros"
     remove_silence: str = None
+    pre_emphasis_coeff: float = 0.97
     use_spectro: bool = True
     mfcc: bool = False
 
