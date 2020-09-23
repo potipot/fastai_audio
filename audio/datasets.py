@@ -21,12 +21,14 @@ class Dataset:
     def read_labels(self) -> dict:
         raise NotImplementedError("You have to define dictionary generation method if you want to inherit this class")
 
-    def load_dict(self, file_name: Path) -> dict:
+    @staticmethod
+    def load_dict(file_name: Path) -> dict:
         assert (file_name.suffix == '.pkl')
         with open(file_name.as_posix(), 'rb') as f:
             return pickle.load(f)
 
-    def save_dict(self, dict_obj: dict, file_name: Path):
+    @staticmethod
+    def save_dict(dict_obj: dict, file_name: Path):
         assert (file_name.suffix == '.pkl')
         with open(file_name.as_posix(), 'wb') as f:
             pickle.dump(dict_obj, f, pickle.HIGHEST_PROTOCOL)

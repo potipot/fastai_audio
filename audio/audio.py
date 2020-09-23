@@ -241,7 +241,6 @@ class AudioItem(ItemBase):
         return self
 
     def lighting(self, func, **kwargs):
-        raise NotImplementedError
         #TODO study audio normalization
         data_new = func(self.logit_px, **kwargs).sigmoid()
         return self
