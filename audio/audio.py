@@ -176,12 +176,6 @@ class AudioItem(ItemBase):
             self._set_loudness(target_loudness, clipping_method=clipping_method, **kwargs)
         return self
 
-    def _get_resize_target(self, size):
-        c, features, time_bins = self.data.shape
-        if isinstance(size, int):
-            size = (features, size)
-        return size
-
     def _get_duration_crop_target(self, duration):
         *_, features, time_bins = self.data.shape
         # this is probably broken and works only for spectro, not waveform
@@ -196,20 +190,20 @@ class AudioItem(ItemBase):
             bins = time_bins
         return features, bins
 
-    def resize(self, size, interp_mode="bilinear"):
+    def resize(self, size:tuple, interp_mode="bilinear"):
         """Temporary fix to allow image resizing transform"""
-        data = self.data.unsqueeze(0)
+        assert((data := self.data).ndim == 3)
+        data = data.unsqueeze(0)
         # if data is integer we need to wrap it in float and remember the original type
         source_dtype = data.dtype
         if convert_types := not data.is_floating_point(): data = data.float()
-        size_target = self._get_resize_target(size)
         align_corners = None if interp_mode=='nearest' else False
-        data_new = torch.nn.functional.interpolate(data, size=size_target, mode=interp_mode, align_corners=align_corners)
+        data_new = torch.nn.functional.interpolate(data, size=size, mode=interp_mode, align_corners=align_corners)
         if convert_types: data_new = data_new.to(dtype=source_dtype)
         self.data = data_new.squeeze(0)
         self.sr = self.sr*data_new.shape[-1]/data.shape[-1]
 
-    def apply_tfms(self, tfms, duration:int=1280, size=None, do_resolve:bool=True, padding_mode:str='reflection'):
+    def apply_tfms(self, tfms, duration:int=None, size_factor:tuple=(1,1), do_resolve:bool=True, padding_mode:str='reflection'):
         tfms = listify(tfms)
         size_tfms = [o for o in tfms if isinstance(o.tfm, TfmCrop)]
         if do_resolve:
@@ -223,10 +217,11 @@ class AudioItem(ItemBase):
             else:
                 x = tfm(x)
         # below is the resizing part, `separate from cropping`
-        if size is not None:
+        if size_factor:
             # read target size from size dictionary, passed to transform method, default to own length (no resize)
-            orig_size = x.shape[-1]
-            new_size = size.get(getattr(self.__class__, '__name__'), orig_size)
+            _, *orig_size = x.shape
+            # to multiply element-wise
+            new_size = tuple(np.array(orig_size)*np.array(size_factor))
             x.resize(new_size)
             # if x.config is not None: x.config._sr *= new_size/orig_size
         return x
