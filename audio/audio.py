@@ -220,9 +220,10 @@ class AudioItem(ItemBase):
         if size_factor:
             # read target size from size dictionary, passed to transform method, default to own length (no resize)
             _, *orig_size = x.shape
+            orig_size = tuple(orig_size)
             # to multiply element-wise
             new_size = tuple(np.array(orig_size)*np.array(size_factor))
-            x.resize(new_size)
+            if new_size != orig_size: x.resize(new_size)
             # if x.config is not None: x.config._sr *= new_size/orig_size
         return x
 
