@@ -270,17 +270,14 @@ class AudioList(ItemList):
             path = path.directory
         extensions = ifnone(extensions, AUDIO_EXTENSIONS)
         return super().from_folder(path=path, extensions=extensions, include=include, **kwargs)
-        
-        
+
     @classmethod
-    def from_df(cls, df:DataFrame, path:PathOrStr, cols:IntsOrStrs=0, folder:PathOrStr=None, suffix:str='', **kwargs)->ItemList:
+    def from_df(cls, df:DataFrame, path:PathOrStr='.', cols:IntsOrStrs=0, **kwargs)->ItemList:
         "Get the filenames in `cols` of `df` with `folder` in front of them, `suffix` at the end."
-        suffix = suffix or ''
-        res = super().from_df(df, path=path, cols=cols, **kwargs)
-        pref = f'{res.path}{os.path.sep}'
-        if folder is not None: pref += f'{folder}{os.path.sep}'
-        res.items = np.char.add(np.char.add(pref, res.items.astype(str)), suffix)
-        return res
+        # df = df[df.dataset_type != 'test']
+        # recover absolute paths
+        df.path = df.path.map(lambda p: (path/p).as_posix())
+        return super().from_df(df, path=path, cols=cols, **kwargs)
 
     def register_sampling_rate(self):
         if self.config.resample_to is None:

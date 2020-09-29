@@ -5,6 +5,7 @@ from typing import Callable
 from IPython.display import Audio
 import mimetypes
 import torchaudio
+from fastai.core import PathOrStr
 from fastai.vision import Image, listify, TfmCrop, FlowField, ItemBase, ifnone
 import numpy as np
 import math
@@ -21,11 +22,12 @@ AUDIO_EXTENSIONS = tuple(str.lower(k) for k, v in mimetypes.types_map.items() if
 
 
 class AudioItem(ItemBase):
-    def __init__(self, sig=None, sr=None, path=None, spectro=None, max_to_pad=None, start=None, end=None, loudness=None,
+    def __init__(self, sig=None, sr=None, path:PathOrStr=None, spectro=None, max_to_pad=None, start=None, end=None, loudness=None,
                  config:AudioConfig=None):
         """Holds Audio signal and/or spectrogram data"""
         if isinstance(sig, np.ndarray): sig = torch.from_numpy(sig)
-        self._sig, self._sr, self.path, self._spectro = sig, sr, path, spectro
+        self._sig, self._sr, self._spectro = sig, sr, spectro
+        self.path = Path(path) if isinstance(path, str) else path
         self._loudness = loudness
         self.config = config
         self.max_to_pad = max_to_pad

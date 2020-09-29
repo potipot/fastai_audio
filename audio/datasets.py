@@ -7,7 +7,7 @@ from fastprogress import progress_bar
 
 
 class Dataset:
-    def __init__(self, directory: Path, sample=None, force_reload=False):
+    def __init__(self, directory: Path, sample=None, force_reload=False) -> object:
         self.directory = directory
         self.sample = sample
         self.force_reload = force_reload
@@ -141,4 +141,17 @@ class LunaDataset(Dataset):
         read = pd.read_csv(self.directory/'labels.csv', names=['filepath', 'label'])
         read['filepath'] = read['filepath'].apply(lambda path: (self.directory / path).as_posix())
         return read.set_index('filepath')['label'].to_dict()
+
+
+if __name__ == '__main__':
+    mozilla = MozillaDataset(Path.home() / 'Datasets/audio/mozilla/')
+    ipla = IplaDataset(Path.home() / 'Datasets/audio/ipla/', force_reload=True)
+    toucan_test = ToucanTestDataset(Path.home() / 'Datasets/audio/toucan_test/', no_numerics=True, force_reload=True)
+    luna = LunaDataset(Path.home() / 'Datasets/audio/luna/split', force_reload=True)
+    clarin_split = LunaDataset(Path.home() / 'Datasets/audio/clarin_split', force_reload=True)
+    labels_dict = {**mozilla.labels, **ipla.labels, **clarin_split.labels, **toucan_test.labels, **luna.labels}
+    filtered_dict = Dataset.load_dict(Path.home() / 'Datasets/audio/tempo_0.25_dur_10.pkl')
+    df = pd.DataFrame.from_dict(filtered_dict, orient='index', columns=['label']).reset_index().rename(
+        columns={'index': 'path'})
+    df.path = df.path.map(lambda p: Path(p).relative_to(Path.home() / 'Datasets/audio').as_posix())
 
