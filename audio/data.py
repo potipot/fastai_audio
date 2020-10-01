@@ -34,8 +34,8 @@ class AudioDataBunch(DataBunch):
         for sr, count in rates.items(): print(f"{int(sr)}: {count} files")
         fig, axs = plt.subplots(2, 1, figsize=figsize)
         max_tempo = 0.25
-        min_duration = 1.0
-        max_duration = 15.0
+        min_duration = 0.5
+        max_duration = 10.0
         axs[0].hist(tempos, bins=bins, log=log)
         axs[0].axvline(max_tempo, color='r', alpha=0.5, label='max tempo')
         axs[0].plot([], [], ' ', label=f'{len(tempos[tempos < max_tempo])} samples in range')
@@ -272,9 +272,10 @@ class AudioList(ItemList):
         return super().from_folder(path=path, extensions=extensions, include=include, **kwargs)
 
     @classmethod
-    def from_df(cls, df:DataFrame, path:PathOrStr='.', cols:IntsOrStrs=0, **kwargs)->ItemList:
+    def from_df(cls, df:DataFrame, path:PathOrStr='.', cols:IntsOrStrs=0, include:Iterable=None, **kwargs)->ItemList:
         "Get the filenames in `cols` of `df` with `folder` in front of them, `suffix` at the end."
-        # df = df[df.dataset_type != 'test']
+        # filter only paths with keyword
+        if include: df = df[df.path.str.contains('|'.join(include))]
         # recover absolute paths
         df.path = df.path.map(lambda p: (path/p).as_posix())
         return super().from_df(df, path=path, cols=cols, **kwargs)
