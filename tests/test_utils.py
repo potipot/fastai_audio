@@ -1,6 +1,6 @@
 import unittest
 import torch
-from ..audio.utils import one_hot_tensor, one_hot_decode
+from ..fastai_audio.utils import one_hot_tensor, one_hot_decode
 
 
 class TestOneHotEncode(unittest.TestCase):

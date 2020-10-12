@@ -1,13 +1,10 @@
-from . import AudioItem
-from .config import get_cache, make_cache
-from .transform import *
 from pathlib import Path as PosixPath
 import matplotlib as plt
 from fastai.vision import *
 from fastprogress.fastprogress import progress_bar
 import torchaudio
-from .utils import sequences, get_file_info
-from .datasets import Dataset
+from fastai_audio.fastai_audio import sequences, get_file_info, get_cache, make_cache, AudioItem
+from fastai_audio.fastai_audio.transform import *
 
 
 class EmptyFileException(Exception):
@@ -199,7 +196,7 @@ class AudioLabelList(LabelList):
         # TODO this is a hack to always use tfm_crop_time
         #  consider removing the _processed attribute and move crop_time
         #  to proper apply_tfms place
-        #  also accessed in fastai_audio.audio.data@line357
+        #  also accessed in fastai_audio.fastai_audio.data@line357
         self.x.config._processed = True
         super().process(*args, **kwargs)
 
@@ -227,7 +224,7 @@ class AudioList(ItemList):
         cd = config.cache_dir
         # After calling init from super class the _label_list fields gets overwritten, thats why its re-initialized
         self._label_list = self.__class__._label_list
-        # wants to store Audio label list here to shadow the .process method and use audio + config preprocessing?
+        # wants to store Audio label list here to shadow the .process method and use fastai_audio + config preprocessing?
         # why not use preprocessor for that?
         if str(path) not in str(cd):
             config.cache_dir = path / cd
@@ -262,12 +259,8 @@ class AudioList(ItemList):
         plt.show()
   
     @classmethod
-    def from_folder(cls, path:Union[Dataset,Path,str]='.', extensions:Collection[str]=None, include=None, **kwargs)->ItemList:
-        "Get the list of files in `path` that have an audio suffix. `recurse` determines if we search subfolders."
-        # wrap to allow use of Dataset class explicitly
-        if isinstance(path, Dataset):
-            if include is None: include = path.sample
-            path = path.directory
+    def from_folder(cls, path:Union[Path,str]='.', extensions:Collection[str]=None, include=None, **kwargs)->ItemList:
+        "Get the list of files in `path` that have an fastai_audio suffix. `recurse` determines if we search subfolders."
         extensions = ifnone(extensions, AUDIO_EXTENSIONS)
         return super().from_folder(path=path, extensions=extensions, include=include, **kwargs)
 

@@ -18,7 +18,7 @@ from .config import AudioConfig
 from .loudnorm import get_loudness, volume, clip
 from .utils import _channel_first, _signal_first
 
-AUDIO_EXTENSIONS = tuple(str.lower(k) for k, v in mimetypes.types_map.items() if v.startswith('audio/'))
+AUDIO_EXTENSIONS = tuple(str.lower(k) for k, v in mimetypes.types_map.items() if v.startswith('fastai_audio/'))
 
 
 class AudioItem(ItemBase):
@@ -145,7 +145,7 @@ class AudioItem(ItemBase):
         return self
 
     def _reduce_noise(self, silence_threshold: int = 30):
-        """a function that cuts the leading and trailing noise from audio signal and uses it as a sample for noise
+        """a function that cuts the leading and trailing noise from fastai_audio signal and uses it as a sample for noise
         reducing algorithm. Original waveform is being replaced. *db* is used as the difference between signal and noise"""
         _, (trim_left, trim_right) = librosa.effects.trim(self.sig.squeeze(), top_db=silence_threshold)
         noise = torch.cat((self.sig[:, :trim_left], self.sig[:, trim_right:]), dim=1)
@@ -239,7 +239,7 @@ class AudioItem(ItemBase):
         return self
 
     def lighting(self, func, **kwargs):
-        #TODO study audio normalization
+        #TODO study fastai_audio normalization
         data_new = func(self.logit_px, **kwargs).sigmoid()
         return self
 

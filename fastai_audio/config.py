@@ -91,7 +91,7 @@ class ReconstructSignal:
 
 @dataclass
 class AudioConfig:
-    '''Options for pre-processing audio signals'''
+    '''Options for pre-processing fastai_audio signals'''
     cache: bool = True
     cache_dir = Path.home()/'.fastai/cache'
     # force_cache = False >>> DEPRECATED Use clear cache instead

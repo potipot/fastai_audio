@@ -1,4 +1,4 @@
-from .data import *
+from fastai_audio.fastai_audio.data import *
 from torch.nn import Conv2d, Sequential, Module
 
 def adapt_conv(conv: Conv2d, n_channels:int, pretrained:bool=False,
@@ -43,7 +43,7 @@ def audio_learner(data:AudioDataBunch, base_arch:Callable=models.resnet18, metri
                   ps:Floats=0.5, custom_head:Optional[nn.Module]=None, split_on:Optional[SplitFuncOrIdxList]=None, 
                   bn_final:bool=False, init=nn.init.kaiming_normal_, concat_pool:bool=True, 
                   padding_mode:str='zeros', adapt=True, **kwargs:Any)->Learner:
-    '''Create a learner to apply a CNN model to audio spectrograms.'''
+    '''Create a learner to apply a CNN model to fastai_audio spectrograms.'''
     learn = cnn_learner(data, base_arch, cut=cut, metrics=metrics, pretrained=pretrained, lin_ftrs=lin_ftrs, ps=ps,
                         custom_head=custom_head, split_on=split_on, bn_final=bn_final, init=init,
                         concat_pool=concat_pool, **kwargs)

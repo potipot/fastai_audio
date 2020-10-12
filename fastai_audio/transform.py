@@ -1,5 +1,4 @@
-from .audio import *
-from .data import *
+from fastai_audio.fastai_audio import *
 
 import matplotlib.pyplot as plt
 import torch
@@ -218,7 +217,7 @@ def tfm_random_cutout(ai:AUDIO_CLASS, pct_to_cut=.15, **kwargs)->AUDIO_CLASS:
     return AUDIO_CLASS(masked, ai.sr)
 
 def tfm_pad_with_silence(ai:AUDIO_CLASS, pct_to_pad=.15, min_to_pad=None, max_to_pad=None, **kwargs)->AUDIO_CLASS:
-    """Adds silence to beginning or end of signal, simulating microphone cut at start of end of audio."""
+    """Adds silence to beginning or end of signal, simulating microphone cut at start of end of fastai_audio."""
     if max_to_pad is None: max_to_pad = int(ai.sig.shape[0] * 0.15)
     if min_to_pad is None: min_to_pad = -max_to_pad
     pad = random.randint(min_to_pad, max_to_pad)
@@ -276,7 +275,7 @@ def get_signal_transforms(white_noise:bool=True,
                          mx_to_pad:int=1000,
                          xtra_tfms:Optional[Collection[Transform]]=None,
                          **kwargs)->Collection[Transform]:
-    "Utility func to easily create a list of audio transforms."
+    "Utility func to easily create a list of fastai_audio transforms."
     res = []
     if shift_max_pct: res.append(partial(tfm_shift, max_pct=shift_max_pct))
     if white_noise: res.append(partial(tfm_add_white_noise, **kwargs))
