@@ -3,8 +3,9 @@ import matplotlib as plt
 from fastai.vision import *
 from fastprogress.fastprogress import progress_bar
 import torchaudio
-from fastai_audio.fastai_audio import sequences, get_file_info, get_cache, make_cache, AudioItem
-from fastai_audio.fastai_audio.transform import *
+from fastai_audio.fastai_audio.utils import sequences, get_file_info
+from fastai_audio.fastai_audio.audio import AudioItem, AudioConfig, AUDIO_EXTENSIONS
+from fastai_audio.fastai_audio.config import get_cache, make_cache
 
 
 class EmptyFileException(Exception):
