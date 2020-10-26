@@ -271,7 +271,7 @@ class AudioList(ItemList):
         # filter only paths with keyword
         if include: df = df[df.path.str.contains('|'.join(include))]
         # recover absolute paths
-        df.path = df.path.map(lambda p: (path/p).as_posix())
+        df.loc[:].path = str(path) + '/' + df.path
         return super().from_df(df, path=path, cols=cols, **kwargs)
 
     def register_sampling_rate(self):

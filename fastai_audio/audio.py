@@ -263,11 +263,11 @@ class AudioItem(ItemBase):
             # no signal or path but spectro is defined
             self.sig = self.config.mel2sig(self.spectro)
 
-    def _load_spectro(self):
+    def _get_spectro(self):
         if self.path is None: raise ValueError("item path wasn't provided")
-        cache_path = self.config.get_cache_path(self.path)
+        cache_path = self.config.get_cache_absolute_path(self.path)
         if cache_path.exists():
-            spectro = torch.load(cache_path)
+            spectro = self.config.load_from_cache(cache_path)
         else:
             # self.validate_consistencies(self.config)
             spectro = self._create_spectro()
@@ -313,7 +313,7 @@ class AudioItem(ItemBase):
 
     @property
     def spectro(self):
-        if self._spectro is None: self._load_spectro()
+        if self._spectro is None: self._get_spectro()
         return self._spectro
 
     @spectro.setter

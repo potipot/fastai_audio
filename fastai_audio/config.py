@@ -93,8 +93,7 @@ class ReconstructSignal:
 class AudioConfig:
     '''Options for pre-processing fastai_audio signals'''
     cache: bool = True
-    cache_dir = Path.home()/'.fastai/cache'
-    # force_cache = False >>> DEPRECATED Use clear cache instead
+    cache_dir: Path = field(default=Path.home()/'.fastai/cache', repr=False)
 
     duration: int = None
     max_to_pad: float = None
@@ -128,6 +127,9 @@ class AudioConfig:
     #             warnings.warn(f"{name} should be in milliseconds, it looks like you might be trying to use seconds")
     #     self.__dict__[name] = value
 
+    def __post_init__(self):
+        self.cache_contents = self.cache_dir/'cache_contents.txt'
+
     @property
     def sg_funcs(self):
         if self._sg_funcs is None:
@@ -148,10 +150,10 @@ class AudioConfig:
         '''Delete the files and empty dirs in the cache folder'''
         num_removed = 0
         parent_dirs = set()
-        if not os.path.exists(self.cache_dir/"cache_contents.txt"):
+        if not self.cache_contents.exists():
             print("Cache contents not found, try calling again after creating your AudioList")
 
-        with open(self.cache_dir/"cache_contents.txt", 'r') as f:
+        with open(self.cache_contents, 'r') as f:
             pb = progress_bar(f.read().split('\n')[:-1])
             for line in pb:
                 if not os.path.exists(line): continue
@@ -170,7 +172,7 @@ class AudioConfig:
                     os.rmdir(str(parent))
                 except Exception as e:
                     print(f"Warning: Unable to remove empty dir {parent}, due to error {str(e)}...continuing")
-        os.remove(self.cache_dir/"cache_contents.txt")
+        self.cache_contents.unlink()
         print(f"{num_removed} files removed")
 
     def cache_size(self):
@@ -187,23 +189,60 @@ class AudioConfig:
     def record_cache_contents(self, files):
         '''Writes cache filenames to log for safe removal using 'clear_cache()' '''
         try:
-            with open(self.cache_dir / "cache_contents.txt", 'a+') as f:
+            with open(self.cache_contents, 'a+') as f:
                 for file in files:
                     f.write(str(file) + '\n')
-        except Exception as e:
+        except Exception:
             print(f"Unable to save files to cache log, cache at {self.cache_dir} may need to be cleared manually")
 
-    def get_cache_path(self, fn:Path):
+    def get_cache_absolute_path(self, fn:Path):
         # folder = md5(str(asdict(self))+str(asdict(self.sg_cfg)))
         folder = md5(self.__repr__())
         fname = f"{md5(fn)}-{fn.name}.pt"
         return Path(self.cache_dir/(f"{folder}/{fname}"))
 
+    def get_cache_relative_path(self, fn:Path):
+        return self.get_cache_absolute_path(fn).relative_to(self.cache_dir)
+
     def save_in_cache(self, fn, spectro):
-        cache_path = self.get_cache_path(fn)
-        os.makedirs(cache_path.parent, exist_ok=True)
-        torch.save(spectro, cache_path)
-        self.record_cache_contents([cache_path])
+        absolute_path = self.get_cache_absolute_path(fn)
+        relative_path = self.get_cache_relative_path(fn)
+        os.makedirs(absolute_path.parent, exist_ok=True)
+        torch.save(spectro, absolute_path)
+        self.record_cache_contents([relative_path])
+
+    def load_from_cache(self, cache_path: Path):
+        if not cache_path.is_absolute():
+            cache_path = self.cache_dir/cache_path
+        return torch.load(cache_path)
+
+    def fix_cache(self):
+        # open in read mode and write to list
+        with open(self.cache_contents) as cache:
+            all_lines = cache.readlines()
+
+        new_count = 0
+        converted_count = 0
+        old_count = len(all_lines)
+
+        # open in write mode with overwriting
+        with open(self.cache_contents, mode='w') as cache:
+            for line in all_lines:
+                line = line.strip()
+                if os.path.isabs(line):
+                    absolute_filepath = line
+                    relative_filepath = os.path.relpath(line, self.cache_dir)
+                    converted_count += 1
+                else:
+                    relative_filepath = line
+                    absolute_filepath = os.path.join(self.cache_dir, line)
+                # using isfile instead of Path.exists() cause os is faster
+                if os.path.isfile(absolute_filepath):
+                    cache.write(relative_filepath + '\n')
+                    new_count += 1
+
+        print(f'Deleted {old_count - new_count} missing entries from cache, '
+              f'converted {converted_count} paths to relative.')
 
 
 def get_cache(config, cache_type, item_path, params):
