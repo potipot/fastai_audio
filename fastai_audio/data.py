@@ -268,10 +268,10 @@ class AudioList(ItemList):
     @classmethod
     def from_df(cls, df:DataFrame, path:PathOrStr='.', cols:IntsOrStrs=0, include:Iterable=None, **kwargs)->ItemList:
         "Get the filenames in `cols` of `df` with `folder` in front of them, `suffix` at the end."
-        # filter only paths with keyword
-        if include: df = df[df.path.str.contains('|'.join(include))]
         # recover absolute paths
         df.loc[:].path = str(path) + '/' + df.path
+        # filter only paths with keyword
+        if include: df = df[df.path.str.contains('|'.join(include))]
         return super().from_df(df, path=path, cols=cols, **kwargs)
 
     def register_sampling_rate(self):
