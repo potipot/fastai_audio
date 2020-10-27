@@ -220,7 +220,7 @@ class AudioList(ItemList):
         return items
 
     def __init__(self, items, path, config=AudioConfig(), **kwargs):
-        items = AudioList._filter_empty(items)
+        # items = AudioList._filter_empty(items)
         super().__init__(items, path, **kwargs)
         cd = config.cache_dir
         # After calling init from super class the _label_list fields gets overwritten, thats why its re-initialized
@@ -266,12 +266,20 @@ class AudioList(ItemList):
         return super().from_folder(path=path, extensions=extensions, include=include, **kwargs)
 
     @classmethod
-    def from_df(cls, df:DataFrame, path:PathOrStr='.', cols:IntsOrStrs=0, include:Iterable=None, **kwargs)->ItemList:
+    def from_df(cls, df: DataFrame, path: PathOrStr = '.', cols: IntsOrStrs = 0, include: Iterable = None,
+                **kwargs) -> ItemList:
         "Get the filenames in `cols` of `df` with `folder` in front of them, `suffix` at the end."
         # recover absolute paths
-        df.loc[:].path = str(path) + '/' + df.path
+        df.iloc[:, cols] = df.iloc[:, cols].apply(lambda x: os.path.join(path, x))
+
         # filter only paths with keyword
-        if include: df = df[df.path.str.contains('|'.join(include))]
+        if include: df = df[df.iloc[:, cols].str.contains('|'.join(include))]
+
+        # filter empty or non-existing files
+        non_empty_filter = df.iloc[:, cols].apply(lambda x: os.path.exists(x) and os.path.getsize(x) > 0)
+        n_empty = len(df) - len(non_empty_filter)
+        df = df[non_empty_filter]
+        if n_empty: print(f'Removed {n_empty} empty df entries.')
         return super().from_df(df, path=path, cols=cols, **kwargs)
 
     def register_sampling_rate(self):
