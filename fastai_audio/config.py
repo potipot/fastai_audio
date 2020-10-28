@@ -156,6 +156,7 @@ class AudioConfig:
         with open(self.cache_contents, 'r') as f:
             pb = progress_bar(f.read().split('\n')[:-1])
             for line in pb:
+                line = os.path.join(self.cache_dir, line)
                 if not os.path.exists(line): continue
                 else:
                     try:
@@ -198,7 +199,7 @@ class AudioConfig:
     def get_cache_absolute_path(self, fn:Path):
         # folder = md5(str(asdict(self))+str(asdict(self.sg_cfg)))
         folder = md5(self.__repr__())
-        fname = f"{md5(fn)}-{fn.name}.pt"
+        fname = f"{md5(fn.relative_to(fn.parent.parent))}-{fn.name}.pt"
         return Path(self.cache_dir/(f"{folder}/{fname}"))
 
     def get_cache_relative_path(self, fn:Path):
