@@ -66,6 +66,18 @@ class AudioDataBunch(DataBunch):
         ax.set_xticks(np.arange(lens.max(), step=5))
         return lens
 
+    @property
+    def inner_df_stacked(self):
+        """Get stacked dataframe by joining all subsets"""
+        df_list = list()
+        ds_list = ['train_ds', 'valid_ds', 'test_ds']
+        for ds_name in ds_list:
+            ds = self.__getattribute__(ds_name)
+            if hasattr(ds, 'inner_df'): df_list.append(ds.inner_df)
+
+        df = pd.concat(df_list).reset_index(drop=True)
+        return df.drop_duplicates()
+
 
 def downmix_item(item, config, path):
     item_path, label = item
