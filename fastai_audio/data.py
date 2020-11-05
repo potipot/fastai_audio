@@ -219,57 +219,25 @@ class AudioList(ItemList):
     _bunch = AudioDataBunch
     config: AudioConfig
 
-    @staticmethod
-    def _filter_empty(items):
-        def _filter(fn: Path) -> bool:
-            return os.path.exists(fn) and os.path.getsize(fn) > 0
-
-        old_count = len(items)
-        items = list(filter(_filter, items))
-        new_count = len(items)
-        if old_count != new_count:
-            print(f"Filtered out {old_count-new_count} empty files")
-        return items
-
-    def __init__(self, items, path, config=AudioConfig(), **kwargs):
-        # items = AudioList._filter_empty(items)
+    def __init__(self, items, path, config=AudioConfig(), use_cache_only: bool = False, is_filtered: bool = False, **kwargs):
         super().__init__(items, path, **kwargs)
-        cd = config.cache_dir
         # After calling init from super class the _label_list fields gets overwritten, thats why its re-initialized
         self._label_list = self.__class__._label_list
         # wants to store Audio label list here to shadow the .process method and use fastai_audio + config preprocessing?
         # why not use preprocessor for that?
-        if str(path) not in str(cd):
-            config.cache_dir = path / cd
         self.config = config
-        self.copy_new += ['config']
+        # need to store this attribute cause otherwise every view of the ItemList is filtered again and this is time consuming
+        self.is_filtered = is_filtered
+        self.use_cache_only = use_cache_only
+        self.copy_new += ['config', 'use_cache_only', 'is_filtered']
         self._sr = self.register_sampling_rate()
-
-    def _get_pad_func(self):
-        def pad_func(sig, sr): 
-            pad_len = self.config.max_to_pad if self.config.max_to_pad is not None else self.config.segment_size
-            num_samples = int((sr*pad_len)/1000)
-            return tfm_padtrim_signal(sig, num_samples, pad_mode="zeros")
-        return pad_func
+        if not self.is_filtered: self.filter_empty()
 
     def get(self, i):
         file_name = super().get(i)
         return AudioItem(path=file_name, config=self.config)
 
     def reconstruct(self, x, **kwargs): return x
-    
-    def _plot_lengths(self, lens, prec, figsize, log=True, bins=10):
-        '''Plots a list of file lengths displaying prec digits of precision'''
-        rounded = [round(i, prec) for i in lens]
-        rounded_count = Counter(rounded)
-        plt.figure(num=None, figsize=figsize, dpi=80, facecolor='w', edgecolor='k')
-        labels = sorted(rounded_count.keys())
-        values = [rounded_count[i] for i in labels]
-        width = 1
-        plt.bar(labels, values, width, log=log, bins=bins)
-        xticks = np.linspace(int(min(rounded)), int(max(rounded))+1, 10)
-        plt.xticks(xticks)
-        plt.show()
   
     @classmethod
     def from_folder(cls, path:Union[Path,str]='.', extensions:Collection[str]=None, include=None, **kwargs)->ItemList:
@@ -286,12 +254,6 @@ class AudioList(ItemList):
 
         # filter only paths with keyword
         if include: df = df[df.iloc[:, cols].str.contains('|'.join(include))]
-
-        # filter empty or non-existing files
-        non_empty_filter = df.iloc[:, cols].apply(lambda x: os.path.exists(x) and os.path.getsize(x) > 0)
-        n_empty = len(df) - len(non_empty_filter)
-        df = df[non_empty_filter]
-        if n_empty: print(f'Removed {n_empty} empty df entries.')
         return super().from_df(df, path=path, cols=cols, **kwargs)
 
     def register_sampling_rate(self):
@@ -301,6 +263,16 @@ class AudioList(ItemList):
             sr = self.config.resample_to
         self.config._sr = sr
         return sr
+
+    def filter_empty(self):
+        def exists_non_empty(filepath: Union[Path, str]) -> bool:
+            if self.use_cache_only:
+                filepath = self.config.get_cache_absolute_path(Path(filepath))
+            return os.path.exists(filepath) and os.path.getsize(filepath) > 0
+        exist = np.array(list(map(exists_non_empty, self.items)), dtype='bool')
+        if n_empty := sum(~exist): print(f"Filtered out {n_empty} empty files ({self.use_cache_only=})")
+        self.is_filtered = True
+        return self if all(exist) else self[exist]
 
 
 def open_audio(fn: Path, after_open: Callable = None) -> AudioItem:
