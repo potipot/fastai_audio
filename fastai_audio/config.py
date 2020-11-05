@@ -218,6 +218,11 @@ class AudioConfig:
         return torch.load(cache_path)
 
     def fix_cache(self):
+        """
+        This methode is used to fix old cache where paths were stored as absolute paths
+        Fix cache changes absolute paths to relative paths, with regard to self.cache_dir
+        :return:
+        """
         # open in read mode and write to list
         with open(self.cache_contents) as cache:
             all_lines = cache.readlines()

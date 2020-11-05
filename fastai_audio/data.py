@@ -272,7 +272,10 @@ class AudioList(ItemList):
         exist = np.array(list(map(exists_non_empty, self.items)), dtype='bool')
         if n_empty := sum(~exist): print(f"Filtered out {n_empty} empty files ({self.use_cache_only=})")
         self.is_filtered = True
-        return self if all(exist) else self[exist]
+        # return self if all(exist) else self[exist]
+        if not all(exist):
+            self.items = self.items[exist]
+            self.inner_df = self.inner_df[exist]
 
 
 def open_audio(fn: Path, after_open: Callable = None) -> AudioItem:
