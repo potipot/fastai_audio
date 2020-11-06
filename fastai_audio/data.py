@@ -252,6 +252,12 @@ class AudioList(ItemList):
         # recover absolute paths
         df.iloc[:, cols] = df.iloc[:, cols].apply(lambda x: os.path.join(path, x))
 
+        # drop duplicates
+        duplicates = df.iloc[:, cols].duplicated()
+        if duplicates.any():
+            print(f'Dropping duplicates {df[duplicates]}')
+            df = df[~duplicates]
+
         # filter only paths with keyword
         if include: df = df[df.iloc[:, cols].str.contains('|'.join(include))]
         return super().from_df(df, path=path, cols=cols, **kwargs)
