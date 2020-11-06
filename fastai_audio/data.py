@@ -255,7 +255,7 @@ class AudioList(ItemList):
         # drop duplicates
         duplicates = df.iloc[:, cols].duplicated()
         if duplicates.any():
-            print(f'Dropping duplicates {df[duplicates]}')
+            print(f'Dropping duplicates {df.iloc[:, cols][duplicates]}')
             df = df[~duplicates]
 
         # filter only paths with keyword
