@@ -7,7 +7,7 @@ import pyloudnorm
 import torch
 import numpy as np
 
-from fastai_audio.fastai_audio.utils import _channel_first, _to_numpy, get_file_info
+from fastai_audio.utils import _channel_first, _to_numpy, get_file_info
 
 _num_backends = {np.ndarray: np, torch.Tensor: torch}
 
