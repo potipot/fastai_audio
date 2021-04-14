@@ -264,10 +264,12 @@ class AudioItem(ItemBase):
             self.sig = self.config.mel2sig(self.spectro)
 
     def _get_spectro(self):
-        if self.path is None: raise ValueError("item path wasn't provided")
-        cache_path = self.config.get_cache_absolute_path(self.path)
-        if cache_path.exists():
-            spectro = self.config.load_from_cache(cache_path)
+        # if self.path is not None:
+        #     raise ValueError("item path wasn't provided")
+        if self.config.cache:
+            cache_path = self.config.get_cache_absolute_path(self.path)
+            if cache_path.exists():
+                spectro = self.config.load_from_cache(cache_path)
         else:
             # self.validate_consistencies(self.config)
             spectro = self._create_spectro()
